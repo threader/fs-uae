@@ -3,12 +3,12 @@
 #include "sysdeps.h"
 
 #include "uae.h"
-#include "autoconf.h"
 
 #include <string.h>
 #include <string.h>
 
 #include "uae/memory.h"
+#include "autoconf.h"
 #include "options.h"
 #include "blkdev.h"
 #include "custom.h"
@@ -22,6 +22,7 @@
 #include "uae/fs.h"
 #include "uae/log.h"
 #include "uae/glib.h"
+#include "uae/time.h"
 
 void keyboard_settrans (void);
 libamiga_callbacks g_libamiga_callbacks = {};
@@ -30,7 +31,7 @@ amiga_media_function g_amiga_media_function = NULL;
 
 int g_uae_deterministic_mode = 0;
 int g_amiga_paused = 0;
-
+bool g_fs_uae_jit_compiler;
 int g_amiga_savestate_docompress = 1;
 
 #ifdef DEBUG_SYNC
@@ -126,16 +127,12 @@ void amiga_floppy_set_writable_images(int writable) {
     g_fs_uae_writable_disk_images = writable;
 }
 
-int amiga_init() {
-    printf("libamiga (based on emulation core from %s) initialized\n",
-            UAE_BASE_VERSION);
-    write_log("libamiga (based on emulation core from %s) initialized\n",
-            UAE_BASE_VERSION);
+int amiga_init(void)
+{
+    printf("UAE: Initializing core derived from %s\n", UAE_BASE_VERSION);
+    write_log("UAE: Initializing core derived from %s\n", UAE_BASE_VERSION);
 
-    // because frame_time_t is sometimes cast to int, we make sure to
-    // start from 0 wo it will work for "a while". Should be fixed
-    // properly
-    g_uae_epoch = fs_get_monotonic_time();
+    uae_time_init();
 
     /*
 #ifdef DEBUG_SYNC
@@ -154,6 +151,13 @@ int amiga_init() {
     romlist_init();
 
     return 1;
+}
+
+bool amiga_init_jit_compiler(void)
+{
+    write_log("JIT: Enabling JIT compiler\n");
+    g_fs_uae_jit_compiler = true;
+    return true;
 }
 
 void amiga_set_video_format(int format) {
@@ -279,11 +283,18 @@ int amiga_get_rand_checksum() {
     return uaerand() & 0x00ffffff;
 }
 
-int amiga_get_state_checksum() {
-    int checksum = uae_get_memory_checksum();
+int amiga_get_state_checksum(void)
+{
+    int checksum = uae_get_memory_checksum(NULL, 0);
 #ifdef DEBUG_SYNC
     write_sync_log("memcheck: %08x\n", checksum);
 #endif
+    return checksum & 0x00ffffff;
+}
+
+int amiga_get_state_checksum_and_dump(void *data, int size)
+{
+    int checksum = uae_get_memory_checksum(data, size);
     return checksum & 0x00ffffff;
 }
 
@@ -312,7 +323,8 @@ void amiga_write_config(const char *path) {
     cfgfile_save(&currprefs, path, 0);
 }
 
-int amiga_enable_serial_port(const char *serial_name) {
+int amiga_enable_serial_port(const char *serial_name)
+{
     write_log("amiga_enable_serial_port\n");
     if (serial_name != NULL && serial_name[0]) {
         write_log("serial port device: %s\n", serial_name);
@@ -320,14 +332,21 @@ int amiga_enable_serial_port(const char *serial_name) {
         strcpy(currprefs.sername, serial_name);
         changed_prefs.use_serial = 1;
         currprefs.use_serial = 1;
+        return 1;
     }
-    /*
-    else {
-        write_log("serial: using dummy serial port\n");
+    return 0;
+}
+
+int amiga_enable_parallel_port(const char *parallel_name)
+{
+    write_log("amiga_enable_parallel_port\n");
+    if (parallel_name != NULL && parallel_name[0]) {
+        write_log("Parallel port device: %s\n", parallel_name);
+        strcpy(changed_prefs.prtname, parallel_name);
+        strcpy(currprefs.prtname, parallel_name);
+        return 1;
     }
-    */
-    //config_changed = 1;
-    return 1;
+    return 0;
 }
 
 void amiga_set_cpu_idle(int idle)
@@ -597,8 +616,9 @@ int amiga_set_int_option(const char *option, int value) {
     return result;
 }
 
-int amiga_quit() {
-	printf("amiga_quit\n");
+int amiga_quit()
+{
+    printf("UAE: Calling uae_quit\n");
     uae_quit();
     return 1;
 }

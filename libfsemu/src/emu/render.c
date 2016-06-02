@@ -2,7 +2,11 @@
 #include "config.h"
 #endif
 
+#define FS_EMU_INTERNAL
 #include <fs/emu.h>
+#include <fs/emu/options.h>
+#include <fs/emu/path.h>
+
 #include "render.h"
 
 #include <stdio.h>
@@ -35,7 +39,6 @@
 
 #ifdef USE_OPENGL
 #include <fs/ml/opengl.h>
-#include <fs/glu.h>
 #endif
 
 #ifdef USE_GLES
@@ -474,8 +477,9 @@ static int update_texture() {
         static char* screenshots_prefix = NULL;
         static int screenshots_mask = 7;
         if (screenshots_dir == NULL) {
-            char *path = fs_config_get_string("screenshots_output_dir");
+            char *path = fs_config_get_string(OPTION_SCREENSHOTS_OUTPUT_DIR);
             if (path) {
+                path = fs_emu_path_expand_and_free(path);
                 if (fs_path_exists(path)) {
                     screenshots_dir = path;
                 }
@@ -1752,8 +1756,8 @@ static void render_fade_overlay(double alpha) {
 static void handle_quit_sequence() {
     int fade_time = fs_config_get_int_clamped("fade_out_duration", 0, 10000);
     if (fade_time == FS_CONFIG_NONE) {
-        // fade out over 750ms
-        fade_time = 750;
+        // fade out over 250ms
+        fade_time = 250;
     }
     fade_time = fade_time * 1000;
 
@@ -1809,7 +1813,7 @@ void fs_emu_video_render_function() {
     fs_emu_video_render_mutex_lock();
 
 
-    int in_menu = fs_emu_menu_is_active();
+    int in_menu = fs_emu_menu_mode();
     if (in_menu && g_menu_transition_target < 1.0) {
         g_menu_transition_target = 1.0;
     }
@@ -2259,7 +2263,7 @@ void fs_emu_video_render_function() {
     if (fade_time == FS_CONFIG_NONE) {
         fade_time = fs_config_get_int_clamped("fade_in_duration", 0, 10000);
         if (fade_time == FS_CONFIG_NONE) {
-            fade_time = 750;
+            fade_time = 0;
         }
         fade_time = fade_time * 1000;
     }

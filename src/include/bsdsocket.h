@@ -10,8 +10,8 @@
 #ifndef UAE_BSDSOCKET_H
 #define UAE_BSDSOCKET_H
 
-#ifdef FSUAE // NL
 #include "uae/types.h"
+#ifdef FSUAE
 #include "traps.h"
 #include "threaddep/thread.h"
 #endif
@@ -219,4 +219,4 @@ void bsdsock_fake_int_handler(void);
 
 extern int volatile bsd_int_requested;
 
-#endif // UAE_BSDSOCKET_H
+#endif /* UAE_BSDSOCKET_H */

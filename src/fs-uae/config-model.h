@@ -9,7 +9,12 @@ enum {
     CONFIG_CD32,
     CONFIG_CDTV,
     CONFIG_A1200,
+    CONFIG_A1200_3_0,
     CONFIG_A1200_020,
+    CONFIG_A1200_1230,
+    CONFIG_A1200_1240,
+    CONFIG_A1200_1260,
+    CONFIG_A1200_PPC,
     CONFIG_SUPER,
     CONFIG_A4000,
     CONFIG_A4000_040,
@@ -38,6 +43,7 @@ typedef struct amiga_config {
     const char *id;
     const char *name;
     int model;
+    int can_use_ecs_agnus;
     int quickstart_model;
     int quickstart_config;
     int allow_z3_memory;
@@ -61,6 +67,9 @@ typedef struct amiga_config {
     const char *default_fpu;
     const char *default_fpu_noninternal;
     const char *default_mmu;
+
+    /* This will (possibly) be filled by configure_accelerator. */
+    const char *accelerator_cpu;
 } amiga_config;
 
 extern amiga_config g_fs_uae_amiga_configs[];

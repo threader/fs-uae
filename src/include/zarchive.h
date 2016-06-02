@@ -1,8 +1,8 @@
 #ifndef UAE_ZARCHIVE_H
 #define UAE_ZARCHIVE_H
 
-#ifdef FSUAE // NL
 #include "uae/types.h"
+#ifdef FSUAE
 #include "zfile.h"
 #include <stdio.h>
 #include <stddef.h>
@@ -16,6 +16,7 @@ struct zfile {
     TCHAR *name;
     TCHAR *zipname;
     TCHAR *mode;
+	TCHAR *originalname;
     FILE *f; // real file handle if physical file
     uae_u8 *data; // unpacked data
     int dataseek; // use seek position even if real file
@@ -153,4 +154,4 @@ extern struct zfile *archive_unpackzfile (struct zfile *zf);
 
 extern struct zfile *decompress_zfd (struct zfile*);
 
-#endif // UAE_ZARCHIVE_H
+#endif /* UAE_ZARCHIVE_H */

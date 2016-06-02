@@ -82,7 +82,7 @@ void fs_uae_configure_graphics_card(amiga_config *c)
             if (uaegfx_card == 1) {
                 if (!c->allow_z3_memory) {
                     fs_emu_warning(_("Option uaegfx.card needs a CPU with "
-                                     "32-bit addressing\n"));
+                                     "32-bit addressing"));
                 } else {
                     card = "ZorroIII";
                     memory = 32;
@@ -124,7 +124,7 @@ void fs_uae_configure_graphics_card(amiga_config *c)
     if (path) {
         path = fs_uae_expand_path_and_free(path);
         path = fs_uae_resolve_path_and_free(path, FS_UAE_ROM_PATHS);
-        amiga_set_option("fs_graphics_card_rom_file", path);
+        amiga_set_option("picassoiv_rom_file", path);
         g_free(path);
     }
 }

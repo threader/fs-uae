@@ -8,20 +8,19 @@
 #include <fs/glib.h>
 #include <fs/inifile.h>
 #include <fs/log.h>
-
 #include <stdlib.h>
 #include <string.h>
 
 static int g_initialized = 0;
 GHashTable *g_hash_table = NULL;
 
-#define LOG_LINE "---------------------------------------------------------" \
-        "-------------------\n"
+#define LOG_LINE \
+"----------------------------------------------------------------------------\n"
 
 static void initialize()
 {
-    g_hash_table = g_hash_table_new_full(g_str_hash, g_str_equal,
-                                         g_free, g_free);
+    g_hash_table = g_hash_table_new_full(
+        g_str_hash, g_str_equal, g_free, g_free);
     g_initialized = 1;
 }
 
@@ -85,7 +84,8 @@ const char *fs_config_get_const_string(const char *key)
     return value;
 }
 
-char *fs_config_get_string(const char *key) {
+char *fs_config_get_string(const char *key)
+{
     const char* value = fs_config_get_const_string(key);
     if (value) {
         return g_strdup(value);
@@ -93,63 +93,39 @@ char *fs_config_get_string(const char *key) {
     return NULL;
 }
 
-static void process_key_value(const char *key, char *value, int force) {
+static void process_key_value(const char *key, char *value, int force)
+{
     char *key_lower = g_ascii_strdown(key, -1);
     g_strdelimit (key_lower, "-", '_');
-    // using fs_config_get_const_string here instead of just
-    // g_hash_table_lookup, since that also checks for empty strings, which
-    // should be treated as non-existing keys
+    /* Using fs_config_get_const_string here instead of just
+     * g_hash_table_lookup, since that also checks for empty strings, which
+     * should be treated as non-existing keys. */
     if (!force && fs_config_get_const_string(key_lower)) {
         fs_log("%s = %s (ignored)\n", key_lower, value);
         g_free(key_lower);
         g_free(value);
-    }
-    else {
+    } else {
         g_strstrip(value);
         fs_log("%s = %s\n", key_lower, value);
-        // hash table now owns both key_lower and value
+        /* Hash table now owns both key_lower and value. */
         g_hash_table_insert(g_hash_table, key_lower, value);
     }
 }
 
-void fs_config_set_string(const char *key, const char *value) {
+void fs_config_set_string(const char *key, const char *value)
+{
     process_key_value(key, g_strdup(value), 1);
 }
 
-void fs_config_set_string_if_unset(const char *key, const char *value) {
+void fs_config_set_string_if_unset(const char *key, const char *value)
+{
     if (fs_config_get_const_string(key) == NULL) {
         fs_config_set_string(key, value);
     }
 }
 
-int fs_config_read_file(const char *path, int force) {
-    if (!g_initialized) {
-        initialize();
-    }
-    fs_log("\n");
-    fs_log(LOG_LINE);
-    fs_log("config (%s)\n", path);
-    fs_log(LOG_LINE);
-    fs_log("\n");
-
-    // FIXME: support checking a config key "end_config", which causes
-    // later calls to fs_config_read_config_file to be ignored
-    if (!force && fs_config_get_boolean("end_config") == 1) {
-        fs_log("end_config is set, ignoring this config file\n");
-        return 1;
-    }
-
-    if (!fs_path_is_file(path)) {
-        fs_log("config file %s does not exist\n", path);
-        return 0;
-    }
-
-    fs_ini_file *ini_file = fs_ini_file_open(path);
-    if (ini_file == NULL) {
-        fs_log("error loading config file\n");
-        return 0;
-    }
-
+void fs_config_parse_ini_file(fs_ini_file *ini_file, int force)
+{
     char **groups = fs_ini_file_get_groups(ini_file, NULL);
     for (char **group = groups; *group; group++) {
         const char *prefix = "";
@@ -161,23 +137,53 @@ int fs_config_read_file(const char *path, int force) {
             char *value = fs_ini_file_get_value(ini_file, *group, *key);
             if (value) {
                 char *key2 = g_strconcat(prefix, *key, NULL);
-                process_key_value(key2, value, 0);
+                process_key_value(key2, value, force);
                 g_free(key2);
             }
         }
         g_strfreev(keys);
     }
     g_strfreev(groups);
-    fs_ini_file_destroy(ini_file);
+}
 
+
+int fs_config_read_file(const char *path, int force)
+{
+    if (!g_initialized) {
+        initialize();
+    }
+    fs_log("\n");
+    fs_log(LOG_LINE);
+    fs_log("config (%s)\n", path);
+    fs_log(LOG_LINE);
+    fs_log("\n");
+
+    if (!force && fs_config_get_boolean("end_config") == 1) {
+        fs_log("end_config is set, ignoring this config file\n");
+        return 1;
+    }
+    if (!fs_path_is_file(path)) {
+        fs_log("config file %s does not exist\n", path);
+        return 0;
+    }
+
+    fs_ini_file *ini_file = fs_ini_file_open(path);
+    if (ini_file == NULL) {
+        fs_log("error loading config file\n");
+        return 0;
+    }
+    fs_config_parse_ini_file(ini_file, force);
+    fs_ini_file_destroy(ini_file);
     return 1;
 }
 
-int fs_config_get_boolean(const char *key) {
+int fs_config_get_boolean(const char *key)
+{
     return fs_config_get_int(key);
 }
 
-int fs_config_get_int(const char *key) {
+int fs_config_get_int(const char *key)
+{
     const char *value = fs_config_get_const_string(key);
     if (value == NULL) {
         return FS_CONFIG_NONE;
@@ -185,7 +191,8 @@ int fs_config_get_int(const char *key) {
     return atoi(value);
 }
 
-int fs_config_get_int_clamped(const char *key, int min, int max) {
+int fs_config_get_int_clamped(const char *key, int min, int max)
+{
     int value = fs_config_get_int(key);
     if (value == FS_CONFIG_NONE) {
         return value;
@@ -201,7 +208,8 @@ int fs_config_get_int_clamped(const char *key, int min, int max) {
     return value;
 }
 
-double fs_config_get_double(const char *key) {
+double fs_config_get_double(const char *key)
+{
     const char *value = fs_config_get_const_string(key);
     if (value == NULL) {
         return FS_CONFIG_NONE;
@@ -209,7 +217,8 @@ double fs_config_get_double(const char *key) {
     return g_ascii_strtod(value, NULL);
 }
 
-double fs_config_get_double_clamped(const char *key, double min, double max) {
+double fs_config_get_double_clamped(const char *key, double min, double max)
+{
     double value = fs_config_get_double(key);
     if (value == FS_CONFIG_NONE) {
         return value;
@@ -225,7 +234,8 @@ double fs_config_get_double_clamped(const char *key, double min, double max) {
     return value;
 }
 
-void fs_config_parse_options(int argc, char **argv) {
+void fs_config_parse_options(int argc, char **argv)
+{
     if (!g_initialized) {
         initialize();
     }
@@ -241,19 +251,16 @@ void fs_config_parse_options(int argc, char **argv) {
         if (value) {
             k = g_strndup(key, value - key);
             v = g_strdup(value + 1);
-        }
-        else {
+        } else {
             if (g_str_has_prefix(key, "no-")) {
                 k = g_strdup(key + 3);
                 v = g_strdup("0");
-            }
-            else {
+            } else {
                 k = g_strdup(key);
                 v = g_strdup("1");
             }
         }
 
-        //if (value) {
         if (first) {
             fs_log("\n");
             fs_log(LOG_LINE);
@@ -264,6 +271,6 @@ void fs_config_parse_options(int argc, char **argv) {
         }
         process_key_value(k, v, 0);
         g_free(k);
-        // v is owned by process_key_file, do not free here
+        /* v is owned by process_key_file, do not free here! */
     }
 }

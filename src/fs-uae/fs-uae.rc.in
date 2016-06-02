@@ -10,7 +10,7 @@ BEGIN
       VALUE "FileDescription", "Cross-platform Amiga emulator"
       VALUE "FileVersion", "@PACKAGE_VERSION@"
       VALUE "InternalName", "fs-uae"
-      VALUE "LegalCopyright", "Copyright 2011-2014 Frode Solheim and others"
+      VALUE "LegalCopyright", "Copyright 2011-2015 Frode Solheim and others"
       VALUE "OriginalFilename", "fs-uae.exe"
       VALUE "ProductName", "FS-UAE"
       VALUE "ProductVersion", "@PACKAGE_VERSION@"
@@ -21,4 +21,4 @@ BEGIN
     VALUE "Translation", 0x409, 1252
   END
 END
-2 ICON "@top_srcdir@/icon/fs-uae.ico"
+2 ICON "icon/fs-uae.ico"

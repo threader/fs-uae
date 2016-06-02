@@ -36,12 +36,17 @@
 #include "rommgr.h"
 #include "inputrecord.h"
 #include "calc.h"
+#include "uae/debuginfo.h"
+#include "uae/segtracker.h"
 #include "cpummu.h"
 #include "cpummu030.h"
 #include "ar.h"
-#include "ppc/ppcd.h"
+#include "pci.h"
 #include "uae/io.h"
+#ifdef WITH_PPC
+#include "ppc/ppcd.h"
 #include "uae/ppc.h"
+#endif
 
 #ifdef FSUAE // NL
 #include "uae/fs.h"
@@ -66,6 +71,7 @@ int debug_sprite_mask = 0xff;
 int debug_illegal = 0;
 uae_u64 debug_illegal_mask;
 static int debug_mmu_mode;
+static bool break_if_enforcer;
 
 static uaecptr processptr;
 static uae_char *processname;
@@ -96,6 +102,14 @@ void activate_debugger (void)
 	mmu_triggered = 0;
 }
 
+bool debug_enforcer(void)
+{
+	if (!break_if_enforcer)
+		return false;
+	activate_debugger();
+	return true;
+}
+
 int firsthist = 0;
 int lasthist = 0;
 static struct regstruct history[MAX_HIST];
@@ -120,7 +134,9 @@ static TCHAR help[] = {
 	_T("  fp \"<name>\"/<addr>    Step forward until process <name> or <addr> is active.\n")
 	_T("  fl                    List breakpoints.\n")
 	_T("  fd                    Remove all breakpoints.\n")
-	_T("  fs <val> <mask>       Break when (SR & mask) = val.\n")                   
+	_T("  fs <lines to wait> | <vpos> <hpos> Wait n scanlines/position.\n")
+	_T("  fc <CCKs to wait>     Wait n color clocks.\n")
+	_T("  fS <val> <mask>       Break when (SR & mask) = val.\n")                   
 	_T("  f <addr1> <addr2>     Step forward until <addr1> <= PC <= <addr2>.\n")
 	_T("  e                     Dump contents of all custom registers, ea = AGA colors.\n")
 	_T("  i [<addr>]            Dump contents of interrupt and trap vectors.\n")
@@ -156,6 +172,16 @@ static TCHAR help[] = {
 	_T("  dm                    Dump current address space map.\n")
 	_T("  v <vpos> [<hpos>]     Show DMA data (accurate only in cycle-exact mode).\n")
 	_T("                        v [-1 to -4] = enable visual DMA debugger.\n")
+#ifdef WITH_SEGTRACKER
+	_T("  Z                     print SegmentTracker status.\n")
+	_T("  Ze [<0-1>]            enable/disable/toggle SegmentTracker\n")
+	_T("  Zl                    show seglists tracked by SegmentTracker.\n")
+	_T("  Za <addr>             find segment that contains given address.\n")
+	_T("  Zs 'name'             search seglist with given name.\n")
+	_T("  Zf 'hostfile'         load debug info from given executable file.\n")
+	_T("  Zy 'symbol'           find symbol address.\n")
+	_T("  Zc 'file' <line>      find source code line address.\n")
+#endif /* WITH_SEGTRACKER */
 	_T("  ?<value>              Hex ($ and 0x)/Bin (%)/Dec (!) converter.\n")
 #ifdef _WIN32
 	_T("  x                     Close debugger.\n")
@@ -852,10 +878,12 @@ static void dump_custom_regs (int aga)
 	int len, i, j, end;
 	uae_u8 *p1, *p2, *p3, *p4;
 
+#ifdef AGA
 	if (aga) {
 		dump_aga_custom();
 		return;
 	}
+#endif
 
 	p1 = p2 = save_custom (&len, 0, 1);
 	p1 += 4; // skip chipset type
@@ -1170,7 +1198,7 @@ static void decode_dma_record (int hpos, int vpos, int toggle, bool logfile)
 	int h, i, maxh, cnt;
 	uae_u32 cycles;
 
-	if (!dma_record[0])
+	if (!dma_record[0] || hpos < 0 || vpos < 0)
 		return;
 	dr = &dma_record[dma_record_toggle ^ toggle][vpos * NR_DMA_REC_HPOS];
 	if (logfile)
@@ -1365,7 +1393,7 @@ static void decode_copper_insn (FILE* file, uae_u16 mword1, uae_u16 mword2, unsi
 	if (get_copper_address (-1) >= addr && get_copper_address(-1) <= addr + 3)
 		here = '*';
 
-	console_out_f (_T("%c%08lx: %04lx %04lx%s\t;%c "), here, addr, insn >> 16, insn & 0xFFFF, record, insn != ((mword1 << 16) | mword2) ? '!' : ' ');
+	console_out_f (_T("%c%08x: %04x %04x%s\t;%c "), here, addr, insn >> 16, insn & 0xFFFF, record, insn != ((mword1 << 16) | mword2) ? '!' : ' ');
 
 	switch (insn_type) {
 	case 0x00010000: /* WAIT insn */
@@ -1393,9 +1421,9 @@ static void decode_copper_insn (FILE* file, uae_u16 mword1, uae_u16 mword2, unsi
 				i++;
 			}
 			if (custd[i].name)
-				console_out_f (_T("%s := 0x%04lx\n"), custd[i].name, insn & 0xffff);
+				console_out_f (_T("%s := 0x%04x\n"), custd[i].name, insn & 0xffff);
 			else
-				console_out_f (_T("%04x := 0x%04lx\n"), addr, insn & 0xffff);
+				console_out_f (_T("%04x := 0x%04x\n"), addr, insn & 0xffff);
 		}
 		break;
 
@@ -1613,7 +1641,7 @@ static void deepcheatsearch (TCHAR **c)
 					doremove = 1;
 				if (deconly && diff > 0)
 					doremove = 1;
-			} else if (nonmodified && b != b2) {
+			} else if (nonmodified && b == b2) {
 				doremove = 1;
 			} else if (!wasmodified && b != b2) {
 				doremove = 1;
@@ -1832,7 +1860,7 @@ static void illg_init (void)
 	if (currprefs.cs_ksmirror_a8)
 		memset (illgdebug + 0xa80000, 1, 2 * 512 * 1024);
 #ifdef FILESYS
-	if (uae_boot_rom) /* filesys "rom" */
+	if (uae_boot_rom_type) /* filesys "rom" */
 		memset (illgdebug + rtarea_base, 1, 0x10000);
 #endif
 	if (currprefs.cs_ide > 0)
@@ -1886,8 +1914,13 @@ static int debug_mem_off (uaecptr *addrp)
 	uaecptr addr = *addrp;
 	addrbank *ba;
 	int offset = munge24 (addr) >> 16;
+	if (!debug_mem_banks)
+		return offset;
 	ba = debug_mem_banks[offset];
-	addr = (addr & ba->mask) | ba->startmask;
+	if (!ba)
+		return offset;
+	if (ba->mask || ba->startmask)
+		addr = (addr & ba->mask) | ba->startmask;
 	*addrp = addr;
 	return offset;
 }
@@ -2120,7 +2153,7 @@ static int memwatch_func (uaecptr addr, int rwi, int size, uae_u32 *valp, uae_u3
 
 		if (!m->frozen && m->val_enabled) {
 			int trigger = 0;
-			uae_u32 mask = (1 << (m->size * 8)) - 1;
+			uae_u32 mask = m->size == 4 ? 0xffffffff : (1 << (m->size * 8)) - 1;
 			uae_u32 mval = m->val;
 			int scnt = size;
 			for (;;) {
@@ -2136,6 +2169,8 @@ static int memwatch_func (uaecptr addr, int rwi, int size, uae_u32 *valp, uae_u3
 					mask <<= 16;
 					scnt -= 2;
 					mval <<= 16;
+				} else {
+					scnt -= 4;
 				}
 				if (scnt <= 0)
 					break;
@@ -2431,7 +2466,7 @@ static void memwatch_reset (void)
 	}
 	for (int i = 0; membank_stores[i].addr; i++) {
 		struct membank_store *ms = &membank_stores[i];
-		// name was allocated in memwatch_remap
+		/* name was allocated in memwatch_remap */
 		xfree ((char*)ms->newbank.name);
 		memset (ms, 0, sizeof (struct membank_store));
 		ms->addr = NULL;
@@ -2468,6 +2503,7 @@ static void memwatch_remap (uaecptr addr)
 		TCHAR tmp[200];
 		_stprintf (tmp, _T("%s [D]"), bank->name);
 		ms->addr = bank;
+		ms->banknr = banknr;
 		newbank = &ms->newbank;
 		memcpy (newbank, bank, sizeof(addrbank));
 		newbank->bget = mode ? mmu_bget : debug_bget;
@@ -2480,7 +2516,7 @@ static void memwatch_remap (uaecptr addr)
 		newbank->xlateaddr = debug_xlate;
 		newbank->wgeti = mode ? mmu_wgeti : debug_wgeti;
 		newbank->lgeti = mode ? mmu_lgeti : debug_lgeti;
-		// name will be freed by memwatch_reset
+		/* name will be freed by memwatch_reset */
 		newbank->name = my_strdup (tmp);
 		if (!newbank->mask)
 			newbank->mask = -1;
@@ -2597,6 +2633,17 @@ int debug_bankchange (int mode)
 	return -1;
 }
 
+addrbank *get_mem_bank_real(uaecptr addr)
+{
+	addrbank *ab = &get_mem_bank(addr);
+	if (!memwatch_enabled)
+		return ab;
+	addrbank *ab2 = debug_mem_banks[addr >> 16];
+	if (ab2)
+		return ab2;
+	return ab;
+}
+
 struct mw_acc
 {
 	uae_u32 mask;
@@ -2606,6 +2653,7 @@ struct mw_acc
 static const struct mw_acc memwatch_access_masks[] =
 {
 	{ MW_MASK_ALL, _T("ALL") },
+	{ MW_MASK_NONE, _T("NONE") },
 	{ MW_MASK_ALL & ~MW_MASK_CPU, _T("DMA") },
 	{ MW_MASK_BLITTER_A | MW_MASK_BLITTER_B | MW_MASK_BLITTER_C | MW_MASK_BLITTER_D, _T("BLT") },
 	{ MW_MASK_AUDIO_0 | MW_MASK_AUDIO_1 | MW_MASK_AUDIO_2 | MW_MASK_AUDIO_3, _T("AUD") },
@@ -2961,7 +3009,7 @@ static void memory_map_dump_3(UaeMemoryMap *map, int log)
 #ifdef FSUAE
 #if 0
 			if (caddr) {
-			    printf("-> bank at %08x mirrored at %08x (%p - %p)\n", (j << 16), (uint32_t)(caddr - NATMEM_OFFSET), caddr, NATMEM_OFFSET);
+				printf("-> bank at %08x mirrored at %08x (%p - %p)\n", (j << 16), (uint32_t)(caddr - NATMEM_OFFSET), caddr, NATMEM_OFFSET);
 			}
 #endif
 #endif
@@ -3035,7 +3083,6 @@ static void memory_map_dump_3(UaeMemoryMap *map, int log)
 					}
 				}
 
-
 				if (a1 != &dummy_bank) {
 					for (int m = 0; m < mirrored2; m++) {
 						UaeMemoryRegion *r = &map->regions[map->num_regions];
@@ -3078,6 +3125,7 @@ static void memory_map_dump_3(UaeMemoryMap *map, int log)
 			a1 = a2;
 		}
 	}
+	pci_dump(log);
 	currprefs.illegal_mem = imold;
 }
 
@@ -3136,14 +3184,14 @@ static TCHAR *BSTR2CSTR (uae_u8 *bstr)
 	return s;
 }
 
-static void print_task_info (uaecptr node)
+static void print_task_info (uaecptr node, bool nonactive)
 {
 	TCHAR *s;
 	int process = get_byte_debug (node + 8) == 13 ? 1 : 0;
 
 	console_out_f (_T("%08X: "), node);
 	s = au ((char*)get_real_address (get_long_debug (node + 10)));
-	console_out_f (process ? _T(" PROCESS '%s'\n") : _T(" TASK    '%s'\n"), s);
+	console_out_f (process ? _T("PROCESS '%s'\n") : _T("TASK    '%s'\n"), s);
 	xfree (s);
 	if (process) {
 		uaecptr cli = BPTR2APTR (get_long_debug (node + 172));
@@ -3157,30 +3205,37 @@ static void print_task_info (uaecptr node)
 			console_out (_T("\n"));
 		}
 	}
+	if (nonactive) {
+		uae_u32 sigwait = get_long_debug(node + 22);
+		if (sigwait)
+			console_out_f(_T("          Waiting signals: %08x\n"), sigwait);
+		int offset = kickstart_version >= 37 ? 74 : 70;
+		uae_u32 sp = get_long_debug(node + 54) + offset;
+		uae_u32 pc = get_long_debug(sp);
+		console_out_f(_T("          SP: %08x PC: %08x\n"), sp, pc);
+	}
 }
 
 static void show_exec_tasks (void)
 {
 	uaecptr execbase = get_long_debug (4);
-	uaecptr taskready = get_long_debug (execbase + 406);
-	uaecptr taskwait = get_long_debug (execbase + 420);
-	uaecptr node, end;
+	uaecptr taskready = execbase + 406;
+	uaecptr taskwait = execbase + 420;
+	uaecptr node;
 	console_out_f (_T("Execbase at 0x%08X\n"), execbase);
 	console_out (_T("Current:\n"));
 	node = get_long_debug (execbase + 276);
-	print_task_info (node);
+	print_task_info (node, false);
 	console_out_f (_T("Ready:\n"));
 	node = get_long_debug (taskready);
-	end = get_long_debug (taskready + 4);
-	while (node) {
-		print_task_info (node);
+	while (node && get_long_debug(node)) {
+		print_task_info (node, true);
 		node = get_long_debug (node);
 	}
 	console_out (_T("Waiting:\n"));
 	node = get_long_debug (taskwait);
-	end = get_long_debug (taskwait + 4);
-	while (node) {
-		print_task_info (node);
+	while (node && get_long_debug(node)) {
+		print_task_info (node, true);
 		node = get_long_debug (node);
 	}
 }
@@ -3371,7 +3426,7 @@ static void show_exec_lists (TCHAR *t)
 					get_long_debug(list + 16 + 6), rom_vector,
 					get_word_debug(list + 16 + 4), get_byte_debug(list + 16 + 1));
 				if ((type & 0x10)) {
-					uae_u8 diagarea[32];
+					uae_u8 diagarea[256];
 					uae_u16 nameoffset;
 					uaecptr rom = addr + rom_vector;
 					uae_u8 config = get_byte_debug(rom);
@@ -3386,8 +3441,8 @@ static void show_exec_lists (TCHAR *t)
 						(diagarea[10] << 8) | diagarea[11],
 						(diagarea[12] << 8) | diagarea[13]);
 					if (nameoffset != 0 && nameoffset != 0xffff) {
-						copyromdata(config, rom, nameoffset, diagarea, 32);
-						diagarea[31] = 0;
+						copyromdata(config, rom, nameoffset, diagarea, 256);
+						diagarea[sizeof diagarea - 1] = 0;
 						TCHAR *str = au((char*)diagarea);
 						console_out_f(_T(" '%s'\n"), str);
 						xfree(str);
@@ -3489,6 +3544,7 @@ static void show_exec_lists (TCHAR *t)
 		return;
 	}
 
+	bool full = false;
 	switch (c)
 	{
 	case 'r': // resources
@@ -3496,9 +3552,11 @@ static void show_exec_lists (TCHAR *t)
 		break;
 	case 'd': // devices
 		list = execbase + 350;
+		full = true;
 		break;
 	case 'l': // libraries
 		list = execbase + 378;
+		full = true;
 		break;
 	case 'p': // ports
 		list = execbase + 392;
@@ -3513,10 +3571,63 @@ static void show_exec_lists (TCHAR *t)
 	while (get_long_debug (node)) {
 		TCHAR *name = au ((char*)get_real_address (get_long_debug (node + 10)));
 		uae_u16 v = get_word_debug (node + 8);
-		console_out_f (_T("%08x %d %d %s\n"), node, (int)((v >> 8) & 0xff), (uae_s8)(v & 0xff), name);
+		console_out_f (_T("%08x %d %d"), node, (int)((v >> 8) & 0xff), (uae_s8)(v & 0xff));
+		if (full) {
+			uae_u16 ver = get_word_debug(node + 20);
+			uae_u16 rev = get_word_debug(node + 22);
+			uae_u32 op = get_word_debug(node + 32);
+			console_out_f(_T(" %d.%d %d"), ver, rev, op);
+		}
+		console_out_f(_T(" %s"), name);
 		xfree (name);
+		if (full) {
+			uaecptr idstring = get_long_debug(node + 24);
+			if (idstring) {
+				name = au((char*)get_real_address(idstring));
+				console_out_f(_T(" (%s)"), name);
+				xfree(name);
+			}
+		}
+		console_out_f(_T("\n"));
 		node = get_long_debug (node);
 	}
+}
+
+static void breakfunc(uae_u32 v)
+{
+	write_log(_T("Cycle breakpoint hit\n"));
+	debugging = 1;
+	set_special (SPCFLAG_BRK);
+}
+
+static int cycle_breakpoint(TCHAR **c)
+{
+	TCHAR nc = (*c)[0];
+	next_char(c);
+	if (more_params(c)) {
+		int count = readint(c);
+		if (nc == 's') {
+			if (more_params(c)) {
+				int hp = readint(c);
+				if (count >= vpos) {
+					count = vpos - count;
+				} else {
+					count += maxvpos - vpos;
+				}
+				count *= maxhpos;
+				if (hp >= current_hpos()) {
+					count += hp - current_hpos();
+				} else {
+					count += maxhpos - current_hpos();
+				}
+			} else {
+				count *= maxhpos;
+			}
+		}
+		event2_newevent_x(-1, count, 0, breakfunc);
+		return 1;
+	}
+	return 0;
 }
 
 #if 0
@@ -4167,6 +4278,189 @@ static void m68k_modify (TCHAR **inptr)
 	}
 }
 
+#ifdef WITH_SEGTRACKER
+
+static int parse_string(TCHAR **inptr, TCHAR *str, int max_len)
+{
+	int len = 0;
+	ignore_ws (inptr);
+	if ((**inptr == '"')||(**inptr == '\'')) {
+		TCHAR delim = **inptr;
+		(*inptr)++;
+		while (**inptr != delim && **inptr != 0) {
+			str[len++] = tolower(**inptr);
+			(*inptr)++;
+			if (len == max_len) {
+				break;
+			}
+		}
+		if (**inptr != 0) {
+			(*inptr)++;
+		}
+	}
+	str[len] = '\0';
+	return len;
+}
+
+/* SegmentTracker Z* command parser */
+static void segtracker(TCHAR **inptr)
+{
+	int show_status = 0;
+	if (more_params (inptr)) {
+		switch (next_char (inptr))
+		{
+		case 'a': /* 'Za' <address> searches segment for address */
+			{
+				uae_u32 addr = readhex (inptr);
+				seglist *sl;
+				int num_seg;
+				int found = segtracker_search_address(addr, &sl, &num_seg);
+				if(found) {
+					segment *seg = &sl->segments[num_seg];
+					uae_u32 seg_addr = seg->addr;
+					uae_u32 seg_size = seg->size;
+					uae_u32 seg_end = seg_addr + seg_size;
+					uae_u32 offset = addr - seg_addr;
+					console_out_f(_T("%08x: '%s' #%02d [%08x,%08x,%08x] +%08x\n"),
+								addr, sl->name, num_seg,
+								seg_addr, seg_size, seg_end,
+								offset);
+
+					/* try to find symbol info */
+					debug_symbol *symbol;
+					uae_u32 reloff;
+					int ok = segtracker_find_symbol(seg, offset, &symbol, &reloff);
+					if(ok == 1) {
+						console_out_f(_T("    %08x +%08x  %s\n"),
+									  symbol->offset + seg->addr,
+									  reloff,
+									  symbol->name);
+					}
+
+					/* try to find src line info */
+					debug_src_file *src_file;
+					debug_src_line *src_line;
+					ok = segtracker_find_src_line(seg, offset, &src_file,
+												  &src_line, &reloff);
+					if(ok == 1) {
+						console_out_f(_T("    %08x +%08x  %s:%d\n"),
+									  seg->addr + src_line->offset, reloff,
+									  src_file->src_file, src_line->line);
+					}
+
+				} else {
+					console_out_f(_T("%08x: not found in any segments.\n"), addr);
+				}
+			}
+			break;
+		case 's': /* 'Zs' "pattern" show seglists matching name pattern */
+			{
+				TCHAR str[64];
+				int len = parse_string(inptr, str, 64);
+				if(len > 0) {
+					char *cstr = au(str);
+					console_out_f(_T("Searching seglists matching '%s'\n"),cstr);
+					segtracker_dump(cstr);
+					xfree(cstr);
+				}
+			}
+			break;
+		case 'l': /* 'Zl' list all tracked segments */
+			segtracker_dump(NULL);
+			break;
+		case 'e': /* 'Ze' enable segtracker */
+			ignore_ws(inptr);
+			if(more_params(inptr)) {
+				int v = readint(inptr);
+				segtracker_enabled = v ? 1 : 0;
+			} else {
+				segtracker_enabled = segtracker_enabled ? 0 : 1;
+			}
+			show_status = 1;
+			/* clear seglist if disabled */
+			if(!segtracker_enabled) {
+				segtracker_clear();
+			}
+			break;
+		case 'f': /* 'Zf': load symbols from hunk file */
+			{
+				TCHAR str[256];
+				int len = parse_string(inptr, str, 256);
+				if(len > 0) {
+					/* find segment */
+					seglist *sl = segtracker_find_by_name(str);
+					if(sl != NULL) {
+						console_out_f(_T("Loading debug info for seglist '%s' from hunk file '%s'\n"),
+									  sl->name, str);
+						/* try to load hunk file */
+						debug_file *file = debug_info_load_hunks(str);
+						if(file != NULL) {
+							debug_info_dump_file(file);
+							/* try to add debug info to segment */
+							const char *err;
+							int ok = segtracker_add_debug_info(sl, file, &err);
+							if(ok != 0) {
+								/* adding debug info failed -> free debug info */
+								console_out_f(_T("Error adding debug info: %s\n"), err);
+								debug_info_free_file(file);
+							}
+						} else {
+							console_out_f(_T("Error loading hunk file!\n"));
+						}
+					} else {
+						console_out_f(_T("No loaded segment list found for '%s'\n"), str);
+					}
+				} else {
+					console_out_f(_T("No hunk file given!\n"));
+				}
+			}
+			break;
+		case 'y': /* 'Zy': find symbol */
+			{
+				TCHAR str[64];
+				int len = parse_string(inptr, str, 64);
+				if(len > 0) {
+					char *cstr = au(str);
+					console_out_f(_T("Searching symbols matching '%s'\n"),cstr);
+					segtracker_dump_symbols(cstr);
+					xfree(cstr);
+				}
+			}
+			break;
+		case 'c': /* 'Zc': find code line */
+			{
+				TCHAR str[64];
+				int len = parse_string(inptr, str, 64);
+				if(len > 0) {
+					char *cstr = au(str);
+					ignore_ws(inptr);
+					if(more_params(inptr)) {
+						int line = readint(inptr);
+						console_out_f(_T("Searching code line matching %s:%d\n"),cstr, line);
+						segtracker_dump_src_lines(cstr, line);
+					}
+					xfree(cstr);
+				}
+			}
+			break;
+		}
+	} else {
+		/* only 'Z': show tracker status */
+		show_status = 1;
+	}
+
+	if(show_status) {
+		console_out_f(_T("SegmentTracker is %s\n"), segtracker_enabled ? "enabled":"disabled");
+		int num = segtracker_pool.num_seglists;
+		if(num > 0) {
+			console_out_f(_T("Found %d segment lists\n"), num);
+		}
+	}
+}
+
+#endif /* WITH_SEGTRACKER */
+
+#ifdef WITH_PPC
 static void ppc_disasm(uaecptr addr, uaecptr *nextpc, int cnt)
 {
 	PPCD_CB disa;
@@ -4186,6 +4480,7 @@ static void ppc_disasm(uaecptr addr, uaecptr *nextpc, int cnt)
 	if (nextpc)
 		*nextpc = addr;
 }
+#endif
 
 static uaecptr nxdis, nxmem;
 static bool ppcmode;
@@ -4298,7 +4593,9 @@ static bool debug_line (TCHAR *input)
 					else
 						count = 10;
 					if (ppcmode) {
+#ifdef WITH_PPC
 						ppc_disasm(daddr, &nxdis, count);
+#endif
 					} else {
 						m68k_disasm (daddr, &nxdis, count);
 					}
@@ -4339,6 +4636,12 @@ static bool debug_line (TCHAR *input)
 				inptr++;
 				if (process_breakpoint (&inptr))
 					return true;
+			} else if (inptr[0] == 'c' || inptr[0] == 's') {
+				if (cycle_breakpoint(&inptr))
+					return true;
+			} else if (inptr[0] == 'e' && inptr[1] == 'n') {
+				break_if_enforcer = break_if_enforcer ? false : true;
+				console_out_f(_T("Break when enforcer hit: %s\n"), break_if_enforcer ? _T("enabled") : _T("disabled"));
 			} else {
 				if (instruction_breakpoint (&inptr))
 					return true;
@@ -4550,6 +4853,11 @@ static bool debug_line (TCHAR *input)
 				console_out_f (_T("\n"));
 			}
 			break;
+#ifdef WITH_SEGTRACKER
+		case 'Z':
+			segtracker(&inptr);
+			break;
+#endif /* WITH_SEGTRACKER */
 		case 'h':
 		case '?':
 			if (more_params (&inptr))
@@ -4678,7 +4986,7 @@ void debug (void)
 							seglist = BPTR2APTR(get_long_debug (activetask + 128));
 							seglist = BPTR2APTR(get_long_debug (seglist + 12));
 						}
-						if (activetask == processptr || (processname && (!stricmp (name, processname) || (command && command[0] && !strnicmp (command + 1, processname, command[0]) && processname[((unsigned char *)command)[0]] == 0)))) {
+						if (activetask == processptr || (processname && (!stricmp (name, processname) || (command && command[0] && !strnicmp (command + 1, processname, command[0]) && processname[command[0]] == 0)))) {
 							while (seglist) {
 								uae_u32 size = get_long_debug (seglist - 4) - 4;
 								if (pc >= (seglist + 4) && pc < (seglist + size)) {
@@ -4759,6 +5067,7 @@ void debug (void)
 	}
 #endif
 	debug_1 ();
+#ifdef SAVESTATE
 	if (!debug_rewind && !currprefs.cachesize
 #ifdef FILESYS
 		&& nr_units () == 0
@@ -4766,6 +5075,7 @@ void debug (void)
 		) {
 			savestate_capture (1);
 	}
+#endif
 	for (i = 0; i < BREAKPOINT_TOTAL; i++) {
 		if (bpnodes[i].enabled)
 			do_skip = 1;
@@ -5073,7 +5383,7 @@ int mmu_init(int mode, uaecptr parm, uaecptr parm2)
 		wasjit = currprefs.cachesize;
 		changed_prefs.cachesize = 0;
 		console_out (_T("MMU: JIT disabled\n"));
-		check_prefs_changed_comp ();
+		check_prefs_changed_comp(false);
 	}
 	if (mode == 0) {
 		if (mmu_enabled) {

@@ -18,9 +18,8 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
 #include "sysconfig.h"
@@ -40,7 +39,8 @@
 
 volatile int bsd_int_requested;
 
-void bsdsock_fake_int_handler(void) {
+void bsdsock_fake_int_handler(void)
+{
     STUB("");
 }
 
@@ -61,12 +61,10 @@ void bsdsock_fake_int_handler(void) {
 #include <signal.h>
 #include <arpa/inet.h>
 
-//#define DEBUG_BSDSOCKET
-#ifdef DEBUG_BSDSOCKET
-#define DEBUG_LOG write_log
-#else
-#define DEBUG_LOG(...) do ; while(0)
-#endif
+#define DEBUG_LOG(format, ...) \
+    do { \
+        if (log_bsd) write_log(format, ##__VA_ARGS__); \
+    } while(0)
 
 #define WAITSIGNAL  waitsig (context, sb)
 #ifdef ANDROID
@@ -215,6 +213,10 @@ static int mapsockoptname (int level, int optname)
             return SO_DONTROUTE;
         case 0x0020:
             return SO_BROADCAST;
+#if 0
+        case 0x0023:
+            return SO_TIMESTAMPNS;
+#endif
 #ifdef SO_USELOOPBACK
         case 0x0040:
             return SO_USELOOPBACK;
@@ -245,8 +247,8 @@ static int mapsockoptname (int level, int optname)
             return SO_TYPE;
 
         default:
-            DEBUG_LOG ("Invalid setsockopt option %x for level %d\n",
-                   optname, level);
+            DEBUG_LOG("Invalid setsockopt option 0x%x for level %d\n",
+                      optname, level);
             return -1;
         }
         break;
@@ -277,8 +279,8 @@ static int mapsockoptname (int level, int optname)
             return IP_ADD_MEMBERSHIP;
 
         default:
-            DEBUG_LOG ("Invalid setsockopt option %x for level %d\n",
-                   optname, level);
+            DEBUG_LOG("Invalid setsockopt option 0x%x for level %d\n",
+                      optname, level);
             return -1;
         }
         break;
@@ -291,18 +293,17 @@ static int mapsockoptname (int level, int optname)
             return TCP_MAXSEG;
 
         default:
-            DEBUG_LOG ("Invalid setsockopt option %x for level %d\n",
-                   optname, level);
+            DEBUG_LOG("Invalid setsockopt option 0x%x for level %d\n",
+                      optname, level);
             return -1;
         }
         break;
 
     default:
-        DEBUG_LOG ("Unknown level %d\n", level);
+        DEBUG_LOG("Unknown level %d\n", level);
         return -1;
     }
 }
-
 
 /*
  * Map amiga (s|g)etsockopt return value into the correct form
@@ -489,16 +490,12 @@ STATIC_INLINE void bsd_amigaside_FD_SET (int n, uae_u32 set)
     put_long (set, get_long (set) | (1 << (n % 32)));
 }
 
-#ifdef DEBUG_BSDSOCKET
 static void printSockAddr (struct sockaddr_in *in)
 {
     DEBUG_LOG ("Family %d, ", in->sin_family);
     DEBUG_LOG ("Port %d,",    ntohs (in->sin_port));
     DEBUG_LOG ("Address %s,", inet_ntoa (in->sin_addr));
 }
-#else
-#define printSockAddr(sockAddr)
-#endif
 
 /*
  * Copy a sockaddr object from amiga space to native space
@@ -722,7 +719,7 @@ uae_u32 bsdthr_WaitSelect (SB)
         if (sb->sets [set] != 0)
         bsd_amigaside_FD_ZERO (sb->sets [set]);
     }
-    DEBUG_LOG ("WaitSelect: %d(%d)\n", r, errno);
+    DEBUG_LOG ("WaitSelect: r=%d errno=%d\n", r, errno);
     return r;
 }
 
@@ -739,7 +736,7 @@ uae_u32 bsdthr_Accept_2 (SB)
         fcntl (s, F_SETFL, flags & ~O_NONBLOCK); /* @@@ Don't do this if it's supposed to stay nonblocking... */
         s2 = getsd (sb->context, sb, s);
         sb->ftable[s2-1] = sb->ftable[sb->len]; /* new socket inherits the old socket's properties */
-        DEBUG_LOG ("Accept: AmigaSide %d, NativeSide %d, len %d(%d)", sb->resultval, s, &hlen, get_long (sb->a_addrlen));
+        DEBUG_LOG ("Accept: AmigaSide %d, NativeSide %d, len %d(%d)", sb->resultval, s, hlen, get_long (sb->a_addrlen));
         printSockAddr (&addr);
         foo = get_long (sb->a_addrlen);
         if (foo > 16)
@@ -989,7 +986,7 @@ void host_recvfrom (TrapContext *context, SB, uae_u32 sd, uae_u32 msg, uae_u32 l
 {
     int s = getsock (sb, sd + 1);
 
-    DEBUG_LOG ("Recv[from](%lx, %d, %lx, %ld, %lx, %lx, %d)\n",
+    DEBUG_LOG ("Recv[from](%p, %x, %x, %d, %x, %x, %u)\n",
            sb, sd, msg, len, flags, addr, addrlen);
 
     if (s == -1) {
@@ -1045,7 +1042,7 @@ uae_u32 host_getsockname (SB, uae_u32 sd, uae_u32 name, uae_u32 namelen)
     socklen_t len = sizeof (struct sockaddr_in);
     struct sockaddr_in addr;
 
-    DEBUG_LOG ("getsockname(%d,0x%lx,%d) -> ", sd, name, len);
+    DEBUG_LOG ("getsockname(%u, 0x%x, %u) -> ", sd, name, len);
 
     s = getsock (sb, sd + 1);
 
@@ -1073,7 +1070,7 @@ uae_u32 host_getpeername (SB, uae_u32 sd, uae_u32 name, uae_u32 namelen)
     socklen_t len = sizeof (struct sockaddr_in);
     struct sockaddr_in addr;
 
-    DEBUG_LOG ("getpeername(%d,0x%lx,%d) -> ", sd, name, len);
+    DEBUG_LOG ("getpeername(%u, 0x%x, %u) -> ", sd, name, len);
 
     s = getsock (sb, sd + 1);
 
@@ -1166,7 +1163,7 @@ void host_WaitSelect (TrapContext *context, SB, uae_u32 nfds, uae_u32 readfds, u
 
     if (sigs & wssigs) {
         /* Received the signals we were waiting on */
-        DEBUG_LOG ("WaitSelect: got signal(s) %lx\n", sigs);
+        DEBUG_LOG ("WaitSelect: got signal(s) %x\n", sigs);
 
         if (!(sigs & (((uae_u32)1) << sb->signal))) {
             sockabort (sb);
@@ -1205,7 +1202,7 @@ void host_accept (TrapContext *context, SB, uae_u32 sd, uae_u32 name, uae_u32 na
         return;
     }
 
-    DEBUG_LOG ("accept(%d, %lx, %lx)\n", sb->s, name, namelen);
+    DEBUG_LOG ("accept(%d, %x, %x)\n", sb->s, name, namelen);
     sb->a_addr    = name;
     sb->a_addrlen = namelen;
     sb->action    = 6;
@@ -1257,7 +1254,7 @@ uae_u32 host_bind (TrapContext *context, SB, uae_u32 sd, uae_u32 name, uae_u32 n
         return -1;
     }
 
-    DEBUG_LOG ("bind(%d[%d],0x%lx,%d) -> ", sd, s, name, namelen);
+    DEBUG_LOG ("bind(%u[%d], 0x%x, %u) -> ", sd, s, name, namelen);
     copysockaddr_a2n (&addr, name, namelen);
     printSockAddr (&addr);
     if ((success = bind (s, (struct sockaddr *)&addr, len)) != 0) {
@@ -1295,7 +1292,7 @@ void host_getprotobyname (TrapContext *context, SB, uae_u32 name)
 {
     struct protoent *p = getprotobyname ((char *)get_real_address (name));
 
-    DEBUG_LOG ("Getprotobyname(%s)=%lx\n", get_real_address (name), p);
+    DEBUG_LOG ("Getprotobyname(%s) = %p\n", get_real_address (name), p);
 
     if (p == NULL) {
         SETERRNO;
@@ -1309,7 +1306,7 @@ void host_getprotobyname (TrapContext *context, SB, uae_u32 name)
 void host_getprotobynumber (TrapContext *context, SB, uae_u32 number)
 {
     struct protoent *p = getprotobynumber(number);
-    DEBUG_LOG("getprotobynumber(%d)=%lx\n", number, p);
+    DEBUG_LOG("getprotobynumber(%d) = %p\n", number, p);
 
     if (p == NULL) {
         SETERRNO;
@@ -1331,9 +1328,9 @@ void host_getservbynameport (TrapContext *context, SB, uae_u32 name, uae_u32 pro
     int i;
 
     if (type) {
-        DEBUG_LOG("Getservbyport(%d, %s) = %lx\n", name, get_real_address (proto), s);
+        DEBUG_LOG("Getservbyport(%d, %s) = %p\n", name, get_real_address (proto), s);
     } else {
-        DEBUG_LOG("Getservbyname(%s, %s) = %lx\n", get_real_address (name), get_real_address (proto), s);
+        DEBUG_LOG("Getservbyname(%s, %s) = %p\n", get_real_address (name), get_real_address (proto), s);
     }
 
     if (s == NULL) {
@@ -1605,7 +1602,7 @@ uae_u32 host_IoctlSocket (TrapContext *context, SB, uae_u32 sd, uae_u32 request,
         return -1;
     }
 
-    DEBUG_LOG ("Ioctl code is %lx, flags are %d\n", request, flags);
+    DEBUG_LOG ("Ioctl code is %x, flags are %ld\n", request, flags);
 
     switch (request) {
     case 0x8004667B: /* FIOGETOWN */
@@ -1625,20 +1622,14 @@ uae_u32 host_IoctlSocket (TrapContext *context, SB, uae_u32 sd, uae_u32 request,
 #   endif
 
     case 0x8004667E: /* FIONBIO */
-        if (sd == 0) {
-            printf("WARNING: sd was 0 ???\n");
-            sb->resultval = -1;
-            bsdsocklib_seterrno (sb, 9); /* EBADF */
-            return -1;
-        }
         r = fcntl (sock, F_SETFL, argval ?
                flags | O_NONBLOCK : flags & ~O_NONBLOCK);
         if (argval) {
             DEBUG_LOG ("nonblocking\n");
-            sb->ftable[sd-1] &= ~SF_BLOCKING;
+            sb->ftable[sd] &= ~SF_BLOCKING;
         } else {
             DEBUG_LOG ("blocking\n");
-            sb->ftable[sd-1] |= SF_BLOCKING;
+            sb->ftable[sd] |= SF_BLOCKING;
         }
         return r;
 
@@ -1718,7 +1709,7 @@ void sockabort (SB)
     int chr = 1;
     DEBUG_LOG ("Sock abort!!\n");
     if (write (sb->sockabort[1], &chr, sizeof (chr)) != sizeof (chr)) {
-        DEBUG_LOG ("sockabort - did not write %d bytes\n", sizeof (chr));
+        DEBUG_LOG ("sockabort - did not write %zd bytes\n", sizeof(chr));
     }
 }
 

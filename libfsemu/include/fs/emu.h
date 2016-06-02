@@ -58,7 +58,7 @@ void fs_emu_set_controllers_dir(const char *path);
 // initialize libfsemu
 
 void fs_emu_init_overlays(const char **overlay_names);
-void fs_emu_init();
+void fs_emu_init(void);
 
 #define FS_EMU_INIT_VIDEO 1
 #define FS_EMU_INIT_AUDIO 2
@@ -70,9 +70,9 @@ void fs_emu_init_2(int options);
 
 typedef void (*fs_emu_zoom_function)(int);
 void fs_emu_set_toggle_zoom_function(fs_emu_zoom_function function);
-void fs_emu_toggle_zoom();
+void fs_emu_toggle_zoom(int flags);
 
-void fs_emu_notification(int type, const char *format, ...);
+void fs_emu_notification(uint32_t type, const char *format, ...);
 
 void fs_emu_warning(const char *format, ...);
 void fs_emu_deprecated(const char *format, ...);
@@ -86,18 +86,6 @@ void fs_emu_deprecated(const char *format, ...);
     //return g_fs_emu_config;
 //}
 //void fs_emu_set_config(GKeyFile *config);
-
-//typedef void (*fs_emu_action_function)(int state);
-
-typedef struct fs_emu_action {
-    int input_event;
-    const char *name;
-    int flags;
-    //fs_emu_action_function *function;
-} fs_emu_action;
-
-void fs_emu_set_actions(fs_emu_action *actions);
-int fs_emu_input_action_from_string(const char *value);
 
 void fs_emu_reset_input_mapping();
 void fs_emu_map_custom_actions();
@@ -197,9 +185,9 @@ fs_emu_input_device *fs_emu_get_input_devices(int* count);
 //typedef void (*fs_emu_action_function)(int action, int state);
 //void fs_emu_set_action_function(fs_emu_action_function function);
 
-int fs_emu_configure_joystick(const char *name, const char *type,
-        fs_emu_input_mapping *mapping, int usage,
-        char *out_name, int out_name_len);
+int fs_emu_configure_joystick(
+    const char *name, const char *type, fs_emu_input_mapping *mapping,
+        int usage, char *out_name, int out_name_len, bool reuse);
 
 void fs_emu_configure_mouse(const char *name, int horiz, int vert, int left,
         int middle, int right, int wheel_axis);
@@ -264,17 +252,14 @@ void fs_emu_set_title(const char *title);
 const char *fs_emu_get_sub_title();
 void fs_emu_set_sub_title(const char *title);
 
-void fs_emu_toggle_fullscreen();
+void fs_emu_toggle_fullscreen(void);
 
 double fs_emu_get_average_emu_fps();
 double fs_emu_get_average_sys_fps();
 
-double fs_emu_audio_get_measured_avg_buffer_fill(int stream);
-double fs_emu_audio_get_measured_output_frequency();
-
 // video interface
 
-double fs_emu_get_video_frame_rate();
+double fs_emu_get_video_frame_rate(void);
 /**
  * Specify the frame rate for emulated video (typically 50 or 60).
  */
@@ -370,40 +355,7 @@ int fs_emu_video_buffer_grow(fs_emu_video_buffer *buffer, int width,
 
 // audio interface
 
-int fs_emu_audio_get_volume();
-int fs_emu_audio_get_mute();
-void fs_emu_audio_set_volume(int volume);
-void fs_emu_audio_set_mute(int mute);
-
-
-typedef struct fs_emu_audio_stream_options {
-    int struct_size;
-    int frequency;
-    int channels;
-    int sample_size;
-    int buffer_size;
-    int min_buffers;
-} fs_emu_audio_stream_options;
-
-void fs_emu_init_audio_stream(int stream,
-        fs_emu_audio_stream_options *options);
-void fs_emu_init_audio_stream_options(fs_emu_audio_stream_options *options);
-void fs_emu_audio_pause_stream(int stream);
-void fs_emu_audio_resume_stream(int stream);
-int fs_emu_queue_audio_buffer(int stream, int16_t* buffer, int size);
-int fs_emu_check_audio_buffer_done(int stream, int buffer);
-int fs_emu_get_audio_frequency();
-
-#if 0
-// start deprecated
-void fs_emu_enable_audio_stream(int stream);
-void fs_emu_disable_audio_stream(int stream);
-int fs_emu_get_audio_buffer_size();
-void fs_emu_audio_sample(int stream, int16_t left, int16_t right);
-void fs_emu_set_max_audio_buffers(int buffers);
-void fs_emu_set_audio_buffer_frequency(int stream, int frequency);
-// end deprecated
-#endif
+#include <fs/emu/audio.h>
 
 bool fs_emu_mouse_integration(void);
 void fs_emu_show_cursor(int show);
@@ -412,8 +364,9 @@ int fs_emu_is_cursor_visible(void);
 bool fs_emu_cursor_allowed(void);
 int64_t fs_emu_cursor_is_visible_to(void);
 
-void fs_emu_grab_input(int mode);
-int fs_emu_has_input_grab(void);
+bool fs_emu_input_grab(void);
+void fs_emu_set_input_grab(bool grab);
+void fs_emu_set_input_grab_and_visibility(bool grab, int duration);
 
 void fs_emu_screenshot(const char *path, int crop);
 
@@ -455,13 +408,17 @@ typedef struct fs_emu_menu {
     int idata;
 } fs_emu_menu;
 
+bool fs_emu_menu_mode(void);
+void fs_emu_set_menu_mode(bool mode);
+
+static inline void fs_emu_menu_toggle(void)
+{
+    fs_emu_set_menu_mode(!fs_emu_menu_mode());
+}
+
 void fs_emu_menu_update_current();
 
-void fs_emu_menu_toggle();
-
 void fs_emu_menu_set_current(fs_emu_menu *menu);
-
-int fs_emu_menu_is_active();
 
 fs_emu_menu *fs_emu_menu_new();
 

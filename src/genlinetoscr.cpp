@@ -98,34 +98,44 @@ static int set_indent (int indent)
 	return old_indent;
 }
 
-static void outln (const char *s)
+static void outindent(void)
 {
 	unsigned int i;
 	for (i = 0; i < outfile_indent; i++)
-		fputc (' ', outfile);
+		fputc(' ', outfile);
+}
+
+static void outf(const char *s, ...)
+{
+	va_list ap;
+	va_start(ap, s);
+	vfprintf(outfile, s, ap);
+}
+
+static void outln (const char *s)
+{
+	outindent();
 	fprintf (outfile, "%s\n", s);
 }
 
 static void outlnf (const char *s, ...)
 {
 	va_list ap;
-	unsigned int i;
-	for (i = 0; i < outfile_indent; i++)
-		fputc (' ', outfile);
+	outindent();
 	va_start (ap, s);
 	vfprintf (outfile, s, ap);
 	fputc ('\n', outfile);
 }
 
-static void out_linetoscr_decl (DEPTH_T bpp, HMODE_T hmode, int aga, int spr)
+static void out_linetoscr_decl (DEPTH_T bpp, HMODE_T hmode, int aga, int spr, int genlock)
 {
 #ifdef FSUAE
-	outlnf ("static int NOINLINE __attribute__((__unused__)) linetoscr_%s%s%s%s (int spix, int dpix, int dpix_end)",
+	outlnf ("static int NOINLINE __attribute__((__unused__)) linetoscr_%s%s%s%s%s(int spix, int dpix, int dpix_end)",
 #else
-	outlnf ("static int NOINLINE linetoscr_%s%s%s%s (int spix, int dpix, int dpix_end)",
+	outlnf ("static int NOINLINE linetoscr_%s%s%s%s%s(int spix, int dpix, int dpix_end)",
 #endif
 		get_depth_str (bpp),
-		get_hmode_str (hmode), aga ? "_aga" : "", spr > 0 ? "_spr" : (spr < 0 ? "_spronly" : ""));
+		get_hmode_str (hmode), aga ? "_aga" : "", spr > 0 ? "_spr" : (spr < 0 ? "_spronly" : ""), genlock ? "_genlock" : "");
 }
 
 static void out_linetoscr_do_srcpix (DEPTH_T bpp, HMODE_T hmode, int aga, CMODE_T cmode, int spr)
@@ -184,8 +194,10 @@ static void out_linetoscr_do_dstpix (DEPTH_T bpp, HMODE_T hmode, int aga, CMODE_
 
 static void out_linetoscr_do_incspix (DEPTH_T bpp, HMODE_T hmode, int aga, CMODE_T cmode, int spr)
 {
-	if (spr < 0)
+	if (spr < 0) {
+		outln("    spix++;");
 		return;
+	}
 	if (hmode == HMODE_HALVE1F) {
 		outln (         "    {");
 		outln (         "    uae_u32 tmp_val;");
@@ -225,38 +237,85 @@ static void out_linetoscr_do_incspix (DEPTH_T bpp, HMODE_T hmode, int aga, CMODE
 	}
 }
 
+static void put_dpixsprgenlock(int offset, int genlock)
+{
+	if (!genlock)
+		return;
+	if (offset)
+		outlnf("            genlock_buf[dpix + %d] = get_genlock_transparency(sprcol);", offset);
+	else
+		outlnf("            genlock_buf[dpix] = get_genlock_transparency(sprcol);");
+}
+
+static void put_dpixgenlock(int offset, CMODE_T cmode, int aga, int genlock, const char *var2)
+{
+	if (!genlock)
+		return;
+	outindent();
+	if (offset)
+		outf("    genlock_buf[dpix + %d] = get_genlock_transparency(", offset);
+	else
+		outf("    genlock_buf[dpix] = get_genlock_transparency(");
+
+	if (genlock) {
+		if (cmode == CMODE_EXTRAHB) {
+			outf("%s", var2 ? var2 : "spix_val & 31");
+		}
+		else if (cmode == CMODE_DUALPF) {
+			outf("%s", var2 ? var2 : "lookup[spix_val]");
+		}
+		else if (cmode == CMODE_HAM) {
+			if (aga) {
+				outf("%s", var2 ? var2 : "(spix_val >> 2) & 63");
+			}
+			else {
+				outf("%s", var2 ? var2 : "spix_val & 15");
+			}
+		}
+		else {
+			outf("%s", var2 ? var2 : "spix_val");
+		}
+	}
+	outf(");\n");
+}
 
 static void put_dpix (const char *var)
 {
-	outlnf ("    buf[dpix++] = %s;", var);
+	outlnf("    buf[dpix++] = %s;", var);
 }
 
-static void out_sprite (DEPTH_T bpp, HMODE_T hmode, CMODE_T cmode, int aga, int cnt, int spr)
+static void out_sprite (DEPTH_T bpp, HMODE_T hmode, CMODE_T cmode, int aga, int cnt, int spr, int genlock)
 {
 	if (aga) {
 		if (cnt == 1) {
 			outlnf ( "    if (spritepixels[dpix].data) {");
 			outlnf ( "        sprcol = render_sprites (dpix + 0, %d, sprpix_val, %d);", cmode == CMODE_DUALPF ? 1 : 0, aga);
-			outlnf ( "        if (sprcol)");
+			outlnf("        if (sprcol) {");
 			outlnf ( "            out_val = colors_for_drawing.acolors[sprcol];");
-			outlnf ( "    }");
-			put_dpix ("out_val");
+			put_dpixsprgenlock(0, genlock);
+			outlnf("        }");
+			outlnf("    }");
+			put_dpix("out_val");
 		} else if (cnt == 2) {
 			outlnf ( "    {");
 			outlnf ( "    uae_u32 out_val1 = out_val;");
 			outlnf ( "    uae_u32 out_val2 = out_val;");
-			outlnf ( "    if (spritepixels[dpix + 0].data) {");
+			outlnf("    if (spritepixels[dpix + 0].data) {");
 			outlnf ( "        sprcol = render_sprites (dpix + 0, %d, sprpix_val, %d);", cmode == CMODE_DUALPF ? 1 : 0, aga);
-			outlnf ( "        if (sprcol)");
+			outlnf ( "        if (sprcol) {");
 			outlnf ( "            out_val1 = colors_for_drawing.acolors[sprcol];");
-			outlnf ( "    }");
+			put_dpixsprgenlock(0, genlock);
+			outlnf("        }");
+			outlnf("    }");
 			outlnf ( "    if (spritepixels[dpix + 1].data) {");
 			outlnf ( "        sprcol = render_sprites (dpix + 1, %d, sprpix_val, %d);", cmode == CMODE_DUALPF ? 1 : 0, aga);
-			outlnf ( "        if (sprcol)");
+			outlnf ( "        if (sprcol) {");
 			outlnf ( "            out_val2 = colors_for_drawing.acolors[sprcol];");
-			outlnf ( "    }");
-			put_dpix ("out_val1");
-			put_dpix ("out_val2");
+			put_dpixsprgenlock(1, genlock);
+			outlnf("        }");
+			outlnf("    }");
+			put_dpix("out_val1");
+			put_dpix("out_val2");
 			outlnf ( "    }");
 		} else if (cnt == 4) {
 			outlnf ( "    {");
@@ -264,47 +323,56 @@ static void out_sprite (DEPTH_T bpp, HMODE_T hmode, CMODE_T cmode, int aga, int 
 			outlnf ( "    uae_u32 out_val2 = out_val;");
 			outlnf ( "    uae_u32 out_val3 = out_val;");
 			outlnf ( "    uae_u32 out_val4 = out_val;");
-			outlnf ( "    if (spritepixels[dpix + 0].data) {");
+			outlnf("    if (spritepixels[dpix + 0].data) {");
 			outlnf ( "        sprcol = render_sprites (dpix + 0, %d, sprpix_val, %d);", cmode == CMODE_DUALPF ? 1 : 0, aga);
-			outlnf ( "        if (sprcol)");
+			outlnf ( "        if (sprcol) {");
 			outlnf ( "            out_val1 = colors_for_drawing.acolors[sprcol];");
-			outlnf ( "    }");
+			put_dpixsprgenlock(0, genlock);
+			outlnf("        }");
+			outlnf("    }");
 			outlnf ( "    if (spritepixels[dpix + 1].data) {");
 			outlnf ( "        sprcol = render_sprites (dpix + 1, %d, sprpix_val, %d);", cmode == CMODE_DUALPF ? 1 : 0, aga);
-			outlnf ( "        if (sprcol)");
+			outlnf ( "        if (sprcol) {");
 			outlnf ( "            out_val2 = colors_for_drawing.acolors[sprcol];");
-			outlnf ( "    }");
+			put_dpixsprgenlock(1, genlock);
+			outlnf("        }");
+			outlnf("    }");
 			outlnf ( "    if (spritepixels[dpix + 2].data) {");
 			outlnf ( "        sprcol = render_sprites (dpix + 2, %d, sprpix_val, %d);", cmode == CMODE_DUALPF ? 1 : 0, aga);
-			outlnf ( "        if (sprcol)");
+			outlnf ( "        if (sprcol) {");
 			outlnf ( "            out_val3 = colors_for_drawing.acolors[sprcol];");
-			outlnf ( "    }");
+			put_dpixsprgenlock(2, genlock);
+			outlnf("        }");
+			outlnf("    }");
 			outlnf ( "    if (spritepixels[dpix + 3].data) {");
 			outlnf ( "        sprcol = render_sprites (dpix + 3, %d, sprpix_val, %d);", cmode == CMODE_DUALPF ? 1 : 0, aga);
-			outlnf ( "        if (sprcol)");
+			outlnf ( "        if (sprcol) {");
 			outlnf ( "            out_val4 = colors_for_drawing.acolors[sprcol];");
-			outlnf ( "    }");
-			put_dpix ("out_val1");
-			put_dpix ("out_val2");
-			put_dpix ("out_val3");
-			put_dpix ("out_val4");
+			put_dpixsprgenlock(3, genlock);
+			outlnf("        }");
+			outlnf("    }");
+			put_dpix("out_val1");
+			put_dpix("out_val2");
+			put_dpix("out_val3");
+			put_dpix("out_val4");
 			outlnf ( "    }");
 		}
 	} else {
 		outlnf ( "    if (spritepixels[dpix].data) {");
 		outlnf ( "        sprcol = render_sprites (dpix, %d, sprpix_val, %d);", cmode == CMODE_DUALPF ? 1 : 0, aga);
-		outlnf ( "        if (sprcol) {");
+		put_dpixsprgenlock(0, genlock);
+		outlnf("        if (sprcol) {");
 		outlnf ( "            uae_u32 spcol = colors_for_drawing.acolors[sprcol];");
 		outlnf ( "            out_val = spcol;");
 		outlnf ( "        }");
 		outlnf ( "    }");
 		while (cnt-- > 0)
-			put_dpix ("out_val");
+			put_dpix("out_val");
 	}
 }
 
 
-static void out_linetoscr_mode (DEPTH_T bpp, HMODE_T hmode, int aga, int spr, CMODE_T cmode)
+static void out_linetoscr_mode (DEPTH_T bpp, HMODE_T hmode, int aga, int spr, CMODE_T cmode, int genlock)
 {
 	int old_indent = set_indent (8);
 
@@ -313,9 +381,6 @@ static void out_linetoscr_mode (DEPTH_T bpp, HMODE_T hmode, int aga, int spr, CM
 		outln (        "int *lookup_no = bpldualpfpri ? dblpf_2nd2     : dblpf_2nd1;");
 	} else if (cmode == CMODE_DUALPF)
 		outln (        "int *lookup = bpldualpfpri ? dblpf_ind2 : dblpf_ind1;");
-
-
-	/* TODO: add support for combining pixel writes in 8-bpp modes. */
 
 	if (bpp == DEPTH_16BPP && hmode != HMODE_DOUBLE && hmode != HMODE_DOUBLE2X && spr == 0) {
 		outln (		"int rem;");
@@ -327,7 +392,7 @@ static void out_linetoscr_mode (DEPTH_T bpp, HMODE_T hmode, int aga, int spr, CM
 		out_linetoscr_do_dstpix (bpp, hmode, aga, cmode, spr);
 		out_linetoscr_do_incspix (bpp, hmode, aga, cmode, spr);
 
-		put_dpix ("dpix_val");
+		put_dpix("dpix_val");
 		outln (		"}");
 		outln (		"if (dpix >= dpix_end)");
 		outln (		"    return spix;");
@@ -335,7 +400,6 @@ static void out_linetoscr_mode (DEPTH_T bpp, HMODE_T hmode, int aga, int spr, CM
 		outln (		"if (rem)");
 		outln (		"    dpix_end--;");
 	}
-
 
 	outln (		"while (dpix < dpix_end) {");
 	if (spr)
@@ -356,6 +420,18 @@ static void out_linetoscr_mode (DEPTH_T bpp, HMODE_T hmode, int aga, int spr, CM
 	else
 		outln (		"    out_val = colors_for_drawing.acolors[0];");
 
+	if (hmode == HMODE_DOUBLE) {
+		put_dpixgenlock(0, cmode, aga, genlock, NULL);
+		put_dpixgenlock(1, cmode, aga, genlock, NULL);
+	} else if (hmode == HMODE_DOUBLE2X) {
+		put_dpixgenlock(0, cmode, aga, genlock, NULL);
+		put_dpixgenlock(1, cmode, aga, genlock, NULL);
+		put_dpixgenlock(2, cmode, aga, genlock, NULL);
+		put_dpixgenlock(3, cmode, aga, genlock, NULL);
+	} else {
+		put_dpixgenlock(0, cmode, aga, genlock, NULL);
+	}
+
 	if (hmode != HMODE_DOUBLE && hmode != HMODE_DOUBLE2X && bpp == DEPTH_16BPP && spr == 0) {
 		out_linetoscr_do_srcpix (bpp, hmode, aga, cmode, spr);
 		out_linetoscr_do_dstpix (bpp, hmode, aga, cmode, spr);
@@ -373,17 +449,17 @@ static void out_linetoscr_mode (DEPTH_T bpp, HMODE_T hmode, int aga, int spr, CM
 			outln (	"    dpix += 2;");
 		} else if (bpp == DEPTH_16BPP) {
 			if (spr) {
-				out_sprite (bpp, hmode, cmode, aga, 2, spr);
+				out_sprite(bpp, hmode, cmode, aga, 2, spr, genlock);
 			} else {
 				outln (	"    *((uae_u32 *)&buf[dpix]) = out_val;");
 				outln (	"    dpix += 2;");
 			}
 		} else {
 			if (spr) {
-				out_sprite (bpp, hmode, cmode, aga, 2, spr);
+				out_sprite(bpp, hmode, cmode, aga, 2, spr, genlock);
 			} else {
-				put_dpix ("out_val");
-				put_dpix ("out_val");
+				put_dpix("out_val");
+				put_dpix("out_val");
 			}
 		}
 	} else if (hmode == HMODE_DOUBLE2X) {
@@ -392,7 +468,7 @@ static void out_linetoscr_mode (DEPTH_T bpp, HMODE_T hmode, int aga, int spr, CM
 			outln (	"    dpix += 4;");
 		} else if (bpp == DEPTH_16BPP) {
 			if (spr) {
-				out_sprite (bpp, hmode, cmode, aga, 4, spr);
+				out_sprite(bpp, hmode, cmode, aga, 4, spr, genlock);
 			} else {
 				outln (	"    *((uae_u32 *)&buf[dpix]) = out_val;");
 				outln (	"    dpix += 2;");
@@ -401,27 +477,27 @@ static void out_linetoscr_mode (DEPTH_T bpp, HMODE_T hmode, int aga, int spr, CM
 			}
 		} else {
 			if (spr) {
-				out_sprite (bpp, hmode, cmode, aga, 4, spr);
+				out_sprite(bpp, hmode, cmode, aga, 4, spr, genlock);
 			} else {
-				put_dpix ("out_val");
-				put_dpix ("out_val");
-				put_dpix ("out_val");
-				put_dpix ("out_val");
+				put_dpix("out_val");
+				put_dpix("out_val");
+				put_dpix("out_val");
+				put_dpix("out_val");
 			}
 		}
 	} else {
 		if (bpp == DEPTH_16BPP) {
 			if (spr) {
-				out_sprite (bpp, hmode, cmode, aga, 1, spr);
+				out_sprite(bpp, hmode, cmode, aga, 1, spr, genlock);
 			} else {
 				outln (	"    *((uae_u32 *)&buf[dpix]) = out_val;");
 				outln (	"    dpix += 2;");
 			}
 		} else {
 			if (spr) {
-				out_sprite (bpp, hmode, cmode, aga, 1, spr);
+				out_sprite(bpp, hmode, cmode, aga, 1, spr, genlock);
 			} else {
-				put_dpix ("out_val");
+				put_dpix("out_val");
 			}
 		}
 	}
@@ -438,7 +514,7 @@ static void out_linetoscr_mode (DEPTH_T bpp, HMODE_T hmode, int aga, int spr, CM
 		out_linetoscr_do_dstpix (bpp, hmode, aga, cmode, spr);
 		out_linetoscr_do_incspix (bpp, hmode, aga, cmode, spr);
 
-		put_dpix ("dpix_val");
+		put_dpix("dpix_val");
 		outln (		"}");
 	}
 
@@ -447,15 +523,17 @@ static void out_linetoscr_mode (DEPTH_T bpp, HMODE_T hmode, int aga, int spr, CM
 	return;
 }
 
-static void out_linetoscr (DEPTH_T bpp, HMODE_T hmode, int aga, int spr)
+static void out_linetoscr (DEPTH_T bpp, HMODE_T hmode, int aga, int spr, int genlock)
 {
 	if (aga)
 		outln  ("#ifdef AGA");
 
-	out_linetoscr_decl (bpp, hmode, aga, spr);
+	out_linetoscr_decl (bpp, hmode, aga, spr, genlock);
 	outln  (	"{");
 
 	outlnf (	"    %s *buf = (%s *) xlinebuffer;", get_depth_type_str (bpp), get_depth_type_str (bpp));
+	if (genlock)
+		outlnf("    uae_u8 *genlock_buf = xlinebuffer_genlock;");
 	if (spr)
 		outln ( "    uae_u8 sprcol;");
 	if (aga && spr >= 0)
@@ -464,16 +542,16 @@ static void out_linetoscr (DEPTH_T bpp, HMODE_T hmode, int aga, int spr)
 
 	if (spr >= 0) {
 		outln  (	"    if (bplham) {");
-		out_linetoscr_mode (bpp, hmode, aga, spr, CMODE_HAM);
+		out_linetoscr_mode(bpp, hmode, aga, spr, CMODE_HAM, genlock);
 		outln  (	"    } else if (bpldualpf) {");
-		out_linetoscr_mode (bpp, hmode, aga, spr, CMODE_DUALPF);
+		out_linetoscr_mode(bpp, hmode, aga, spr, CMODE_DUALPF, genlock);
 		outln  (	"    } else if (bplehb) {");
-		out_linetoscr_mode (bpp, hmode, aga, spr, CMODE_EXTRAHB);
+		out_linetoscr_mode(bpp, hmode, aga, spr, CMODE_EXTRAHB, genlock);
 		outln  (	"    } else {");
-		out_linetoscr_mode (bpp, hmode, aga, spr, CMODE_NORMAL);
+		out_linetoscr_mode(bpp, hmode, aga, spr, CMODE_NORMAL, genlock);
 	} else {
 		outln  (	"    if (1) {");
-		out_linetoscr_mode (bpp, hmode, aga, spr, CMODE_NORMAL);
+		out_linetoscr_mode(bpp, hmode, aga, spr, CMODE_NORMAL, genlock);
 	}
 
 	outln  (	"    }\n");
@@ -516,8 +594,11 @@ int main (int argc, char *argv[])
 			for (spr = -1; spr <= 1; spr++) {
 				if (!aga && spr < 0)
 					continue;
-				for (hmode = HMODE_NORMAL; hmode <= HMODE_MAX; hmode++)
-					out_linetoscr (bpp, hmode, aga, spr);
+				for (hmode = HMODE_NORMAL; hmode <= HMODE_MAX; hmode++) {
+					out_linetoscr(bpp, hmode, aga, spr, 0);
+					if (spr >= 0)
+						out_linetoscr(bpp, hmode, aga, spr, 1);
+				}
 			}
 		}
 	}

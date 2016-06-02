@@ -1,22 +1,26 @@
 msgid ""
-msgstr "Project-Id-Version: fs-uae\n"
+msgstr ""
+"Project-Id-Version: fs-uae\n"
 "Report-Msgid-Bugs-To: frode@fs-uae.net\n"
-"POT-Creation-Date: 2014-03-14 19:32+0100\n"
-"PO-Revision-Date: 2014-05-11 15:57-0400\n"
+"POT-Creation-Date: 2016-04-26 00:59+0200\n"
+"PO-Revision-Date: 2016-05-14 05:19-0400\n"
 "Last-Translator: FrodeSolheim <frode-crowdin@fsolheim.net>\n"
 "Language-Team: Turkish\n"
 "Language: tr_TR\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=1; plural=0;\n"
-"X-Generator: crowdin.net\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n\n"
+"X-Generator: crowdin.com\n"
+"X-Crowdin-Project: fs-uae\n"
+"X-Crowdin-Language: tr\n"
+"X-Crowdin-File: fs-uae.pot\n"
 
 msgid "Activated debugger"
 msgstr "Hata ayıklama aktifleştirildi"
 
 msgid "Amiga Control"
-msgstr "Amiga Kontrolü"
+msgstr "Amiga Kontrol"
 
 #. / TRANSLATORS: In context "Zoom: Auto"
 msgid "Auto"
@@ -45,8 +49,8 @@ msgid "CD32 Pad Mode"
 msgstr "CD32 Pad Modu"
 
 #. / TRANSLATORS: This is a menu entry and must not be too long
-msgid "Custom Joystick Port"
-msgstr "Özel Joystick Portu"
+msgid "Custom Joystick Ports"
+msgstr "Özel Joystick Portları"
 
 msgid "Custom Mode"
 msgstr "Özel Mod"
@@ -60,13 +64,17 @@ msgid "Disabled"
 msgstr "Devre dışı"
 
 msgid "Eject"
-msgstr "Çıkar"
+msgstr "Çıkart"
 
 msgid "Empty"
 msgstr "Boş"
 
 msgid "Emulator Control"
 msgstr "Emülatör Kontrolü"
+
+#, c-format
+msgid "Expected FS-UAE version %s, got %s"
+msgstr "Beklenen FS-UAE versiyon %s, mevcut olan %s"
 
 #. / TRANSLATORS: In context "Zoom: Full Frame"
 msgid "Full Frame"
@@ -94,9 +102,6 @@ msgstr "CD%d Sürücüsüne Takın"
 msgid "Insert Into DF%d"
 msgstr "DF%d Sürücüsüne Takın"
 
-msgid "Invalid number of CD-ROM drives specified"
-msgstr "Belirtilen CD-ROM sürücüsü sayısı geçersiz"
-
 msgid "Joystick Mode"
 msgstr "Joystick Modu"
 
@@ -117,15 +122,6 @@ msgstr "Joystick Portu %d Cihazı"
 msgid "Joystick Port %d Mode"
 msgstr "Joystick Portu %d Modu"
 
-msgid "Joystick Port 2"
-msgstr "Joystick Portu 2"
-
-msgid "Joystick Port 3"
-msgstr "Joystick Portu 3"
-
-msgid "Joystick Port 4"
-msgstr "Joystick Portu 4"
-
 msgid "Keyboard"
 msgstr "Klavye"
 
@@ -134,6 +130,9 @@ msgstr "Yükle"
 
 msgid "Load State"
 msgstr "Durum Yükle"
+
+msgid "Max 1 CD-ROM drive supported currently"
+msgstr "Şu anda max 1 CD-ROM sürücü desteklenmektedir"
 
 msgid "More..."
 msgstr "Fazlası..."
@@ -149,11 +148,14 @@ msgstr "Fare Portu"
 
 #. / TRANSLATORS: This is a menu entry and must not be too long: If you struggle
 #. / to get in short enough, just translate "No Device" instead.
+#. / The context is that nothing (no emulated device) is inserted into the
+#. / joystick port.
 msgid "No Amiga Device"
 msgstr "Cihaz Yok"
 
 #. / TRANSLATORS: This is a menu entry and must not be too long: If you struggle
 #. / to get in short enough, just translate "No Device" instead.
+#. / The context is that no host device is inserted into the joystick port.
 msgid "No Host Device"
 msgstr "Cihaz Yok"
 
@@ -170,6 +172,12 @@ msgstr "chip_memory ayarı 512'nin katı olmalıdır"
 msgid "Option fast_memory must be a multiple of 1024"
 msgstr "fast_memory ayarı 1024'ün katı olmalıdır"
 
+msgid "Option motherboard_ram must be a multiple of 1024"
+msgstr "motherboard_ram ayarı 1024'ün katı olmalıdır"
+
+msgid "Option motherboard_ram needs a CPU with 32-bit addressing"
+msgstr "motherboard_ram ayarı 32-bit adreslemeli bir CPU gerektirir"
+
 msgid "Option slow_memory must be a multiple of 256"
 msgstr "slow_memory ayarı 256'nın katı olmalıdır"
 
@@ -179,7 +187,7 @@ msgstr "uaegfx.card ayarı 32-bit adreslemeli bir CPU gerektirir"
 msgid "Option zorro_iii_memory must be a multiple of 1024"
 msgstr "zorro_iii_memory ayarı 1024'ün katı olmalıdır"
 
-msgid "Options zorro_iii_memory needs a CPU with 32-bit addressing"
+msgid "Option zorro_iii_memory needs a CPU with 32-bit addressing"
 msgstr "zorro_iii_memory ayarı 32-bit adreslemeli bir CPU gerektirir"
 
 #. / TRANSLATORS: This is a menu entry and must not be too long
@@ -223,13 +231,19 @@ msgid "Warp mode enabled"
 msgstr "Hız modu aktif"
 
 msgid "Zoom is disabled in RTG mode"
-msgstr "RTG modunda zum yapma özelliği kapalıdır"
+msgstr "RTG modunda yakınlaşma özelliği kapalıdır"
 
 #, c-format
 msgid "Zoom: %s"
-msgstr "Zum yap: %s"
+msgstr "Yakınlaş: %s"
 
 #, c-format
 msgid "Zoom: %s + Border"
-msgstr "Zum yap: %s + Kenar Çizgisi"
+msgstr "Yakınlaş: %s + Kenar Çizgisi"
+
+msgid "[ Port 0 ] Switched to joystick mode"
+msgstr "[ Port 0 ] Joystick moduna geçildi"
+
+msgid "[ Port 0 ] Switched to mouse mode"
+msgstr "[ Port 0 ] Fare moduna geçildi"
 

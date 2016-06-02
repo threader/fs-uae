@@ -31,6 +31,8 @@
 
 #ifdef FSUAE // NL
 #include "uae/fs.h"
+#include "uae/glib.h"
+#include <fs/data.h>
 #undef _WIN32
 #endif
 
@@ -160,7 +162,7 @@ static void checkarchiveparent (struct zfile *z)
 		archive_unpackzfile (z);
 }
 
-static struct zfile *zfile_create (struct zfile *prev)
+static struct zfile *zfile_create (struct zfile *prev, const TCHAR *originalname)
 {
 	struct zfile *z;
 
@@ -171,6 +173,10 @@ static struct zfile *zfile_create (struct zfile *prev)
 	z->next = zlist;
 	zlist = z;
 	z->opencnt = 1;
+	if (prev && prev->originalname)
+		z->originalname = my_strdup(prev->originalname);
+	else if (originalname)
+		z->originalname = my_strdup(originalname);
 	if (prev) {
 		z->zfdmask = prev->zfdmask;
 	}
@@ -186,6 +192,7 @@ static void zfile_free (struct zfile *f)
 		write_log (_T("deleted temporary file '%s'\n"), f->name);
 	}
 	xfree (f->name);
+	xfree (f->originalname);
 	xfree (f->data);
 	xfree (f->mode);
 	xfree (f->userdata);
@@ -265,7 +272,7 @@ static bool checkwrite (struct zfile *zf, int *retcode)
 
 
 static uae_u8 exeheader[]={ 0x00,0x00,0x03,0xf3,0x00,0x00,0x00,0x00 };
-static const TCHAR *diskimages[] = { _T("adf"), _T("adz"), _T("ipf"), _T("scp"), _T("fdi"), _T("dms"), _T("wrp"), _T("dsq"), 0 };
+static const TCHAR *diskimages[] = { _T("adf"), _T("adz"), _T("ipf"), _T("scp"), _T("fdi"), _T("dms"), _T("wrp"), _T("dsq"), _T("pkd"), _T("ima"), 0 };
 
 int zfile_gettype (struct zfile *z)
 {
@@ -287,6 +294,8 @@ int zfile_gettype (struct zfile *z)
 		if (strcasecmp (ext, _T("uss")) == 0)
 			return ZFILE_STATEFILE;
 		if (strcasecmp (ext, _T("rom")) == 0)
+			return ZFILE_ROM;
+		if (strcasecmp (ext, _T("bin")) == 0)
 			return ZFILE_ROM;
 		if (strcasecmp (ext, _T("key")) == 0)
 			return ZFILE_KEY;
@@ -1622,7 +1631,7 @@ static struct zfile *zfile_fopen_nozip (const TCHAR *name, const TCHAR *mode)
 
 	if(*name == '\0')
 		return NULL;
-	l = zfile_create (NULL);
+	l = zfile_create (NULL, name);
 	l->name = my_strdup (name);
 	l->mode = my_strdup (mode);
 	f = uae_tfopen (name, mode);
@@ -1697,7 +1706,7 @@ static struct zfile *zfile_fopen_2 (const TCHAR *name, const TCHAR *mode, int ma
 		l->zfdmask = mask;
 	} else {
 		struct mystat st;
-		l = zfile_create (NULL);
+		l = zfile_create (NULL, name);
 		l->mode = my_strdup (mode);
 		l->name = my_strdup (name);
 		l->zfdmask = mask;
@@ -1863,7 +1872,7 @@ static struct zfile *zfile_fopen_internet (const TCHAR *name, const TCHAR *mode,
 	}
 
 	if (mask & ZFD_CHECKONLY) {
-		zf = zfile_create (NULL);
+		zf = zfile_create (NULL, name);
 		goto end;
 	}
 
@@ -1890,7 +1899,7 @@ static struct zfile *zfile_fopen_internet (const TCHAR *name, const TCHAR *mode,
 		}
 	}
 	if (datalen > 0) {
-		zf = zfile_create (NULL);
+		zf = zfile_create (NULL, name);
 		if (zf) {
 			zf->size = datalen;
 			zf->data = data;
@@ -1913,6 +1922,24 @@ static struct zfile *zfile_fopenx2 (const TCHAR *name, const TCHAR *mode, int ma
 #ifdef _WIN32
 	if (isinternetfile (name))
 		return zfile_fopen_internet (name, mode, mask);
+#endif
+#ifdef FSUAE
+	if (g_str_has_prefix(name, "dat://")) {
+		write_log("zfile_fopenx2 %s\n", name);
+		char *data;
+		int data_size;
+		if (fs_data_file_content(name + 6, &data, &data_size) != 0) {
+			return NULL;
+		}
+		struct zfile *zf = zfile_create(NULL, name);
+		if (zf) {
+			/* The data will be freed by zfile_close (zfile_free). */
+			zf->data = (uae_u8 *) data;
+			zf->size = data_size;
+			zf->datasize = data_size;
+		}
+		return zf;
+	}
 #endif
 	f = zfile_fopen_x (name, mode, mask, index);
 	if (f)
@@ -1980,23 +2007,28 @@ struct zfile *zfile_dup (struct zfile *zf)
 	if (zf->userdata)
 		return NULL;
 	if (!zf->data && zf->dataseek) {
-		nzf = zfile_create (zf);
+		nzf = zfile_create (zf, NULL);
 	} else if (zf->data) {
-		nzf = zfile_create (zf);
+		nzf = zfile_create (zf, NULL);
 		nzf->data = xmalloc (uae_u8, zf->size);
 		memcpy (nzf->data, zf->data, zf->size);
 		nzf->size = zf->size;
 		nzf->datasize = zf->datasize;
-	} else { 
+	} else if (zf->useparent) {
+		nzf = zfile_fopen_parent(zf, zf->name, 0, zf->size);
+		return nzf;
+	} else {
 		if (zf->zipname) {
 			nzf = openzip (zf->name);
 			if (nzf)
 				return nzf;
 		}
+		if (!zf->name || !zf->mode)
+			return NULL;
 		FILE *ff = uae_tfopen (zf->name, zf->mode);
 		if (!ff)
 			return NULL;
-		nzf = zfile_create (zf);
+		nzf = zfile_create (zf, NULL);
 		nzf->f = ff;
 	}
 	zfile_fseek (nzf, zf->seek, SEEK_SET);
@@ -2031,7 +2063,7 @@ int zfile_iscompressed (struct zfile *z)
 struct zfile *zfile_fopen_empty (struct zfile *prev, const TCHAR *name, uae_u64 size)
 {
 	struct zfile *l;
-	l = zfile_create (prev);
+	l = zfile_create (prev, NULL);
 	l->name = my_strdup (name ? name : _T(""));
 	if (size) {
 		l->data = xcalloc (uae_u8, size);
@@ -2060,7 +2092,7 @@ struct zfile *zfile_fopen_parent (struct zfile *z, const TCHAR *name, uae_u64 of
 
 	if (z == NULL)
 		return NULL;
-	l = zfile_create (z);
+	l = zfile_create (z, NULL);
 	if (name)
 		l->name = my_strdup (name);
 	else if (z->name)
@@ -2094,7 +2126,7 @@ struct zfile *zfile_fopen_data (const TCHAR *name, uae_u64 size, const uae_u8 *d
 {
 	struct zfile *l;
 
-	l = zfile_create (NULL);
+	l = zfile_create (NULL, name);
 	l->name = my_strdup (name ? name : _T(""));
 	l->data = xmalloc (uae_u8, size);
 	l->size = size;
@@ -2120,6 +2152,22 @@ uae_u8 *zfile_load_data (const TCHAR *name, const uae_u8 *data,int datalen, int 
 	return out;
 }
 
+uae_u8 *zfile_load_file(const TCHAR *name, int *outlen)
+{
+	struct zfile *zf;
+	int size;
+	uae_u8 *out;
+
+	zf = zfile_fopen(name, _T("rb"));
+	if (!zf)
+		return NULL;
+	size = zfile_size(zf);
+	out = xmalloc (uae_u8, size);
+	zfile_fread(out, 1, size, zf);
+	zfile_fclose(zf);
+	*outlen = size;
+	return out;
+}
 
 int zfile_truncate (struct zfile *z, uae_s64 size)
 {
@@ -2438,6 +2486,11 @@ int zfile_zcompress (struct zfile *f, void *src, int size)
 TCHAR *zfile_getname (struct zfile *f)
 {
 	return f ? f->name : NULL;
+}
+
+TCHAR *zfile_getoriginalname (struct zfile *f)
+{
+	return f ? f->originalname : NULL;
 }
 
 TCHAR *zfile_getfilename (struct zfile *f)

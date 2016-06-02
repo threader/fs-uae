@@ -9,8 +9,8 @@
 #ifndef UAE_CUSTOM_H
 #define UAE_CUSTOM_H
 
-#ifdef FSUAE
 #include "uae/types.h"
+#ifdef FSUAE
 #include "uae/inline.h"
 #include "options.h"
 #else
@@ -46,7 +46,7 @@ extern void do_copper (void);
 extern void notice_new_xcolors (void);
 extern void notice_screen_contents_lost (void);
 extern void init_row_map (void);
-extern void init_hz_full (void);
+extern void init_hz_normal (void);
 extern void init_custom (void);
 
 extern bool picasso_requested_on;
@@ -186,10 +186,8 @@ extern uae_u32 lorestab_h[256][4];
 extern uae_u32 hirestab_l[256][1];
 extern uae_u32 lorestab_l[256][2];
 
-#ifdef AGA
 /* AGA mode color lookup tables */
 extern unsigned int xredcolors[256], xgreencolors[256], xbluecolors[256];
-#endif
 extern int xredcolor_s, xredcolor_b, xredcolor_m;
 extern int xgreencolor_s, xgreencolor_b, xgreencolor_m;
 extern int xbluecolor_s, xbluecolor_b, xbluecolor_m;
@@ -244,9 +242,11 @@ uae_u16 customhack_get (struct customhack *ch, int hpos);
 extern void alloc_cycle_ext (int, int);
 extern void alloc_cycle_blitter (int hpos, uaecptr *ptr, int);
 extern bool ispal (void);
+extern bool isvga (void);
 extern int current_maxvpos (void);
 extern struct chipset_refresh *get_chipset_refresh (void);
 extern void compute_framesync (void);
+extern void getsyncregisters(uae_u16 *phsstrt, uae_u16 *phsstop, uae_u16 *pvsstrt, uae_u16 *pvsstop);
 int is_bitplane_dma (int hpos);
 
-#endif // UAE_CUSTOM_H
+#endif /* UAE_CUSTOM_H */

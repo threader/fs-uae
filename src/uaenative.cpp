@@ -72,9 +72,6 @@ static int g_allocated_handles = 0;
 static int g_max_handle = -1;
 
 #ifdef _WIN32
-#ifndef LT_MODULE_EXT
-#define LT_MODULE_EXT _T(".dll")
-#endif
 #ifndef OS_NAME
 #define OS_NAME _T("windows")
 #endif
@@ -480,7 +477,11 @@ uae_u32 uaenative_call_function (TrapContext *context, int flags)
     uni.function = m68k_areg (regs, 0);
     if (flags & UNI_FLAG_COMPAT) {
         uni.library = 0;
+#ifdef AHI
         uni.uaevar_compat = uaenative_get_uaevar();
+#else
+        uni.uaevar_compat = NULL;
+#endif
     }
     else if (flags & UNI_FLAG_NAMED_FUNCTION) {
         uni.library = m68k_dreg (regs, 0);

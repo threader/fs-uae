@@ -65,12 +65,16 @@
 #include "disk.h"
 #include "threaddep/thread.h"
 #include "a2091.h"
+#include "devices.h"
 
 #ifdef FSUAE // NL
 #include "uae/fs.h"
 #endif
 
 int savestate_state = 0;
+
+#ifdef SAVESTATE
+
 static int savestate_first_capture;
 
 static bool new_blitter = false;
@@ -134,6 +138,8 @@ static void state_incompatible_warn (void)
 		notify_user (NUMSG_STATEHD);
 	}
 }
+
+#endif
 
 /* functions for reading/writing bytes, shorts and longs in big-endian
 * format independent of host machine's endianess */
@@ -256,6 +262,9 @@ TCHAR *restore_string_func (uae_u8 **dstp)
 	xfree (to);
 	return s;
 }
+
+#ifdef SAVESTATE
+
 TCHAR *restore_path_func (uae_u8 **dstp, int type)
 {
 	TCHAR *newpath;
@@ -526,14 +535,7 @@ void restore_state (const TCHAR *filename)
 	savestate_file = f;
 	restore_header (chunk);
 	xfree (chunk);
-	restore_cia_start ();
-	changed_prefs.bogomem_size = 0;
-	changed_prefs.chipmem_size = 0;
-	changed_prefs.fastmem_size = 0;
-	changed_prefs.z3fastmem_size = 0;
-	changed_prefs.z3fastmem2_size = 0;
-	changed_prefs.mbresmem_low_size = 0;
-	changed_prefs.mbresmem_high_size = 0;
+	devices_restore_start();
 	z3num = 0;
 	for (;;) {
 		name[0] = 0;
@@ -687,9 +689,12 @@ void restore_state (const TCHAR *filename)
 #ifdef CDTV
 		else if (!_tcscmp (name, _T("CDTV")))
 			end = restore_cdtv (chunk);
+#if 0
 		else if (!_tcscmp (name, _T("DMAC")))
 			end = restore_cdtv_dmac (chunk);
 #endif
+#endif
+#if 0
 		else if (!_tcscmp (name, _T("DMC2")))
 			end = restore_scsi_dmac (WDTYPE_A3000, chunk);
 		else if (!_tcscmp (name, _T("DMC3")))
@@ -702,12 +707,15 @@ void restore_state (const TCHAR *filename)
 			end = restore_scsi_device (WDTYPE_A2091, chunk);
 		else if (!_tcscmp (name, _T("SCS4")))
 			end = restore_scsi_device (WDTYPE_A2091_2, chunk);
+#endif
+#ifdef SCSIEMU
 		else if (!_tcscmp (name, _T("SCSD")))
 			end = restore_scsidev (chunk);
+#endif
 		else if (!_tcscmp (name, _T("GAYL")))
 			end = restore_gayle (chunk);
 		else if (!_tcscmp (name, _T("IDE ")))
-			end = restore_ide (chunk);
+			end = restore_gayle_ide (chunk);
 		else if (!_tcsncmp (name, _T("CDU"), 3))
 			end = restore_cd (name[3] - '0', chunk);
 #ifdef A2065
@@ -758,7 +766,9 @@ void savestate_restore_finish (void)
 	restore_audio_finish ();
 	restore_disk_finish ();
 	restore_blitter_finish ();
+#ifdef CD32
 	restore_akiko_finish ();
+#endif
 #ifdef CDTV
 	restore_cdtv_finish ();
 #endif
@@ -771,8 +781,8 @@ void savestate_restore_finish (void)
 	restore_cia_finish ();
 	restore_debug_memwatch_finish ();
 	savestate_state = 0;
-	init_hz_full ();
-	audio_activate ();
+	init_hz_normal();
+	audio_activate();
 #ifdef FSUAE
     uae_callback(uae_on_restore_state_finished, savestate_fname);
 #endif
@@ -992,10 +1002,13 @@ static int save_state_internal (struct zfile *f, const TCHAR *description, int c
 	dst = save_cdtv (&len, NULL);
 	save_chunk (f, dst, len, _T("CDTV"), 0);
 	xfree (dst);
+#if 0
 	dst = save_cdtv_dmac (&len, NULL);
 	save_chunk (f, dst, len, _T("DMAC"), 0);
 	xfree (dst);
 #endif
+#endif
+#if 0
 	dst = save_scsi_dmac (WDTYPE_A3000, &len, NULL);
 	save_chunk (f, dst, len, _T("DMC2"), 0);
 	xfree (dst);
@@ -1014,11 +1027,14 @@ static int save_state_internal (struct zfile *f, const TCHAR *description, int c
 			xfree (dst);
 		}
 	}
+#endif
+#ifdef SCSIEMU
 	for (i = 0; i < MAX_TOTAL_SCSI_DEVICES; i++) {
 		dst = save_scsidev (i, &len, NULL);
 		save_chunk (f, dst, len, _T("SCSD"), 0);
 		xfree (dst);
 	}
+#endif
 #ifdef ACTION_REPLAY
 	dst = save_action_replay (&len, NULL);
 	save_chunk (f, dst, len, _T("ACTR"), comp);
@@ -1044,7 +1060,7 @@ static int save_state_internal (struct zfile *f, const TCHAR *description, int c
 		xfree(dst);
 	}
 	for (i = 0; i < 4; i++) {
-		dst = save_ide (i, &len, NULL);
+		dst = save_gayle_ide (i, &len, NULL);
 		if (dst) {
 			save_chunk (f, dst, len, _T("IDE "), 0);
 			xfree (dst);
@@ -1088,7 +1104,9 @@ static int save_state_internal (struct zfile *f, const TCHAR *description, int c
 
 int save_state (const TCHAR *filename, const TCHAR *description)
 {
+#ifdef FSUAE
 	printf("save_state %s\n", filename);
+#endif
 	struct zfile *f;
 	int comp = savestate_docompress;
 
@@ -1352,15 +1370,17 @@ void savestate_rewind (void)
 	if (restore_u32_func (&p))
 		p = restore_cdtv_dmac (p);
 #endif
+#if 0
 	if (restore_u32_func (&p))
 		p = restore_scsi_dmac (WDTYPE_A2091, p);
 	if (restore_u32_func (&p))
 		p = restore_scsi_dmac (WDTYPE_A3000, p);
+#endif
 	if (restore_u32_func (&p))
 		p = restore_gayle (p);
 	for (i = 0; i < 4; i++) {
 		if (restore_u32_func (&p))
-			p = restore_ide (p);
+			p = restore_gayle_ide (p);
 	}
 	p += 4;
 	if (p != p2) {
@@ -1698,6 +1718,7 @@ retry2:
 		p += len;
 	}
 #endif
+#if 0
 	if (bufcheck (st, p, 0))
 		goto retry;
 	p3 = p;
@@ -1718,6 +1739,7 @@ retry2:
 		tlen += len;
 		p += len;
 	}
+#endif
 	if (bufcheck (st, p, 0))
 		goto retry;
 	p3 = p;
@@ -1734,7 +1756,7 @@ retry2:
 		p3 = p;
 		save_u32_func (&p, 0);
 		tlen += 4;
-		if (save_ide (i, &len, p)) {
+		if (save_gayle_ide (i, &len, p)) {
 			save_u32_func (&p3, 1);
 			tlen += len;
 			p += len;
@@ -2122,3 +2144,5 @@ misc:
 - should we strip all paths from image file names?
 
 */
+
+#endif /* SAVESTATE */

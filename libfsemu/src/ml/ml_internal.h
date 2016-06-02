@@ -16,7 +16,6 @@ extern fs_ml_void_function g_fs_ml_video_render_function;
 extern fs_ml_void_function g_fs_ml_video_post_render_function;
 extern int g_fs_ml_video_width;
 extern int g_fs_ml_video_height;
-extern int g_fs_ml_target_refresh_rate;
 extern int g_fs_ml_target_frame_time;
 
 extern fs_mutex *g_fs_ml_video_screenshot_mutex;
@@ -36,20 +35,26 @@ void fs_ml_mouse_init(void);
 //void fs_ml_calibrate_clock();
 
 void fs_ml_prevent_power_saving(void);
+void fs_ml_activate_window_switcher_impl(void);
 //void fs_ml_set_fullscreen_extra();
 
 #ifdef WINDOWS
 void fs_ml_init_raw_input();
 #endif
 
-void fs_ml_configure_window();
+void fs_ml_configure_window(void);
 void fs_ml_render_iteration();
 
 extern fs_ml_input_device *g_fs_ml_input_devices;
 extern int g_fs_ml_input_device_count;
 extern int g_fs_ml_first_keyboard_index;
 extern int g_fs_ml_first_mouse_index;
-extern int g_fs_ml_first_joystick_index;
+// extern int g_fs_ml_first_joystick_index;
+#define MAX_SDL_JOYSTICK_IDS 1024
+#ifdef USE_SDL2
+#include <SDL.h>
+extern SDL_JoystickID g_fs_ml_sdl_joystick_index_map[MAX_SDL_JOYSTICK_IDS];
+#endif
 
 extern int g_fs_ml_running;
 

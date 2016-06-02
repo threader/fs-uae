@@ -1,20 +1,17 @@
 #include "sysconfig.h"
+#include "sysdeps.h"
 
-#ifdef WITH_SLIRP
-
-#include "uae/slirp.h"
-
-#ifdef FSUAE
 #include "ethernet.h"
-#else
 #ifdef _WIN32
-#include "win32_uaenet.h"
+#ifdef FSUAE
 #else
-#include "ethernet.h"
+#include "win32_uaenet.h"
 #endif
 #endif
 #include "threaddep/thread.h"
 #include "options.h"
+#include "sana2.h"
+#include "uae/slirp.h"
 
 #ifndef HAVE_INET_ATON
 static int inet_aton(const char *cp, struct in_addr *ia)
@@ -48,7 +45,7 @@ static struct netdriverdata slirpd =
 	UAENET_SLIRP,
 	_T("slirp"), _T("SLIRP User Mode NAT"),
 	1500,
-	{ 0x00,0x80,0x10,50,51,52 },
+	{ 0x00,0x00,0x00,50,51,52 },
 	1
 };
 static struct netdriverdata slirpd2 =
@@ -56,7 +53,7 @@ static struct netdriverdata slirpd2 =
 	UAENET_SLIRP_INBOUND,
 	_T("slirp_inbound"), _T("SLIRP + Open ports (21-23,80)"),
 	1500,
-	{ 0x00,0x80,0x10,50,51,52 },
+	{ 0x00,0x00,0x00,50,51,52 },
 	1
 };
 
@@ -71,8 +68,11 @@ void slirp_output (const uint8_t *pkt, int pkt_len)
 
 void ethernet_trigger (struct netdriverdata *ndd, void *vsd)
 {
+	if (!ndd)
+		return;
 	switch (ndd->type)
 	{
+#ifdef WITH_SLIRP
 		case UAENET_SLIRP:
 		case UAENET_SLIRP_INBOUND:
 		{
@@ -92,6 +92,7 @@ void ethernet_trigger (struct netdriverdata *ndd, void *vsd)
 			}
 		}
 		return;
+#endif
 #ifdef WITH_UAENET_PCAP
 		case UAENET_PCAP:
 		uaenet_trigger (vsd);
@@ -104,6 +105,7 @@ int ethernet_open (struct netdriverdata *ndd, void *vsd, void *user, ethernet_go
 {
 	switch (ndd->type)
 	{
+#ifdef WITH_SLIRP
 		case UAENET_SLIRP:
 		case UAENET_SLIRP_INBOUND:
 		{
@@ -151,6 +153,7 @@ int ethernet_open (struct netdriverdata *ndd, void *vsd, void *user, ethernet_go
 			uae_slirp_start ();
 		}
 		return 1;
+#endif
 #ifdef WITH_UAENET_PCAP
 		case UAENET_PCAP:
 		if (uaenet_open (vsd, ndd, user, gotfunc, getfunc, promiscuous)) {
@@ -169,6 +172,7 @@ void ethernet_close (struct netdriverdata *ndd, void *vsd)
 		return;
 	switch (ndd->type)
 	{
+#ifdef WITH_SLIRP
 		case UAENET_SLIRP:
 		case UAENET_SLIRP_INBOUND:
 		if (slirp_data) {
@@ -179,6 +183,7 @@ void ethernet_close (struct netdriverdata *ndd, void *vsd)
 			uae_sem_destroy (&slirp_sem2);
 		}
 		return;
+#endif
 #ifdef WITH_UAENET_PCAP
 		case UAENET_PCAP:
 		return uaenet_close (vsd);
@@ -220,8 +225,9 @@ bool ethernet_enumerate (struct netdriverdata **nddp, const TCHAR *name)
 #ifdef WITH_UAENET_PCAP
 	nd = uaenet_enumerate (NULL);
 	if (nd) {
-		for (int i = 0; i < nd[i].active; i++) {
-			nddp[j++] = nd;
+		for (int i = 0; i < MAX_TOTAL_NET_DEVICES; i++) {
+			if (nd[i].active)
+				nddp[j++] = &nd[i];
 		}
 	}
 #endif
@@ -258,16 +264,3 @@ int ethernet_getdatalenght (struct netdriverdata *ndd)
 	}
 	return 0;
 }
-
-#else
-/*
-int slirp_can_output(void)
-{
-        return 0;
-}
-
-void slirp_output (const uint8 *pkt, int pkt_len)
-{
-}
-*/
-#endif // WITH_SLIRP

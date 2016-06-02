@@ -1,8 +1,8 @@
 #ifndef UAE_BLKDEV_H
 #define UAE_BLKDEV_H
 
-#ifdef FSUAE // NL
 #include "uae/types.h"
+#ifdef FSUAE // NL
 #include "uae/limits.h"
 #endif
 
@@ -88,6 +88,8 @@ struct device_info {
 	TCHAR revision[6];
 	const TCHAR *backend;
 	struct cd_toc_head toc;
+	TCHAR system_id[33];
+	TCHAR volume_id[33];
 };
 
 struct amigascsi
@@ -175,7 +177,7 @@ extern int sys_command_cd_qcode (int unitnum, uae_u8*);
 extern int sys_command_cd_toc (int unitnum, struct cd_toc_head*);
 extern int sys_command_cd_read (int unitnum, uae_u8 *data, int block, int size);
 extern int sys_command_cd_rawread (int unitnum, uae_u8 *data, int sector, int size, int sectorsize);
-extern int sys_command_cd_rawread (int unitnum, uae_u8 *data, int sector, int size, int sectorsize, uae_u8 scsicmd9, uae_u8 subs);
+int sys_command_cd_rawread (int unitnum, uae_u8 *data, int sector, int size, int sectorsize, uae_u8 sectortype, uae_u8 scsicmd9, uae_u8 subs);
 extern int sys_command_read (int unitnum, uae_u8 *data, int block, int size);
 extern int sys_command_write (int unitnum, uae_u8 *data, int block, int size);
 extern int sys_command_scsi_direct_native (int unitnum, int type, struct amigascsi *as);
@@ -194,6 +196,7 @@ extern int scsi_cd_emulate (int unitnum, uae_u8 *cmdbuf, int scsi_cmd_len,
 	uae_u8 *scsi_data, int *data_len, uae_u8 *r, int *reply_len, uae_u8 *s, int *sense_len, bool atapi);
 
 extern void blkdev_vsync (void);
+extern void restore_blkdev_start(void);
 
 extern int msf2lsn (int msf);
 extern int lsn2msf (int lsn);
@@ -224,4 +227,4 @@ extern struct device_functions devicefunc_scsi_ioctl;
 extern struct device_functions devicefunc_scsi_spti;
 extern struct device_functions devicefunc_cdimage;
 
-#endif // UAE_BLKDEV_H
+#endif /* UAE_BLKDEV_H */

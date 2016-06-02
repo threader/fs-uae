@@ -42,6 +42,10 @@
  * http://www.ibiblio.org/pub/historic-linux/early-ports/Sparc/NCR/NCR53C9X.txt
  */
 
+#define TYPE_ESP "esp"
+//#define ESP(obj) OBJECT_CHECK(SysBusESPState, (obj), TYPE_ESP)
+#define ESP(obj) (ESPState*)obj->lsistate
+
 static void esp_raise_irq(ESPState *s)
 {
     if (!(s->rregs[ESP_RSTAT] & STAT_INT)) {
@@ -130,6 +134,13 @@ static void do_busid_cmd(ESPState *s, uint8_t *buf, uint8_t busid)
 
     lun = busid & 7;
     current_lun = scsiesp_device_find(&s->bus, 0, s->current_dev->id, lun);
+	if (!current_lun) {
+        s->rregs[ESP_RSTAT] = 0;
+        s->rregs[ESP_RINTR] = INTR_DC;
+        s->rregs[ESP_RSEQ] = SEQ_0;
+	    esp_raise_irq(s);
+		return;
+	}
     s->current_req = scsiesp_req_new(current_lun, 0, lun, buf, s);
     datalen = scsiesp_req_enqueue(s->current_req);
     s->ti_size = datalen;
@@ -209,7 +220,13 @@ static int handle_satn_stop(ESPState *s)
 
 static void write_response(ESPState *s)
 {
-    s->ti_buf[0] = s->status;
+	// Multi Evolution driver reads FIFO after
+	// Message Accepted command. This makes
+	// sure wrong buffer is not read.
+	s->pio_on = 0;
+	s->async_buf = NULL;
+
+	s->ti_buf[0] = s->status;
     s->ti_buf[1] = 0;
     if (s->dma) {
         s->dma_memory_write(s->dma_opaque, s->ti_buf, 2);
@@ -239,7 +256,7 @@ static void esp_dma_done(ESPState *s)
 
 static int esp_do_dma(ESPState *s)
 {
-    uint32_t len, len2;
+    int len, len2;
     int to_device;
 
     to_device = (s->ti_size < 0);
@@ -260,6 +277,7 @@ static int esp_do_dma(ESPState *s)
         len = s->async_len;
     }
 	len2 = len;
+	s->dma_pending = len2;
     if (to_device) {
         len = s->dma_memory_read(s->dma_opaque, s->async_buf, len2);
     } else {
@@ -292,6 +310,27 @@ static int esp_do_dma(ESPState *s)
 	return 1;
 }
 
+void esp_fake_dma_done(void *opaque)
+{
+	ESPState *s = (ESPState*)opaque;
+	int to_device = (s->ti_size < 0);
+	int len = s->dma_pending;
+
+	s->dma_pending = 0;
+	s->dma_left -= len;
+	s->async_buf += len;
+	s->async_len -= len;
+	if (to_device)
+		s->ti_size += len;
+	else
+		s->ti_size -= len;
+	if (s->async_len == 0) {
+		scsiesp_req_continue(s->current_req);
+	} else {
+		esp_do_dma(s);
+	}
+}
+
 void esp_command_complete(SCSIRequest *req, uint32_t status,
                                  size_t resid)
 {
@@ -299,6 +338,7 @@ void esp_command_complete(SCSIRequest *req, uint32_t status,
 
     s->ti_size = 0;
     s->dma_left = 0;
+	s->dma_pending = 0;
     s->async_len = 0;
     s->status = status;
     s->rregs[ESP_RSTAT] = STAT_ST;
@@ -318,11 +358,17 @@ void esp_transfer_data(SCSIRequest *req, uint32_t len)
 	s->async_buf = scsiesp_req_get_buf(req);
     if (s->dma_left) {
         esp_do_dma(s);
-    } else if (s->dma_counter != 0 && s->ti_size <= 0) {
+    } else if (s->dma_counter != 0 && s->ti_size == 0) {
         /* If this was the last part of a DMA transfer then the
            completion interrupt is deferred to here.  */
         esp_dma_done(s);
     }
+}
+
+bool esp_dreq(DeviceState *dev)
+{
+	ESPState *s = ESP(dev);
+	return s->dma_cb != NULL;
 }
 
 static int handle_ti(ESPState *s)
@@ -411,13 +457,15 @@ uint64_t esp_reg_read(void *opaque, uint32_t saddr)
             if ((s->rregs[ESP_RSTAT] & STAT_PIO_MASK) == 0 || s->pio_on) {
                 /* Data out.  */
                 //write_log("esp: PIO data read not implemented\n");
-                s->rregs[ESP_FIFO] = s->async_buf[s->ti_rptr++];
-				s->pio_on = 1;
-				if (s->ti_size == 1) {
+				if (s->async_buf) {
+	                s->rregs[ESP_FIFO] = s->async_buf[s->ti_rptr++];
+					s->pio_on = 1;
+				} else {
+					s->rregs[ESP_FIFO] = 0;
+				}
+				if (s->ti_size == 1 && s->current_req) {
 					scsiesp_req_continue(s->current_req);
 				}
-//					esp_command_complete(s);
-				//activate_debugger();
             } else {
                 s->rregs[ESP_FIFO] = s->ti_buf[s->ti_rptr++];
             }
@@ -439,6 +487,17 @@ uint64_t esp_reg_read(void *opaque, uint32_t saddr)
         esp_lower_irq(s);
 
         return old_val;
+	case ESP_RFLAGS:
+	{
+		int v;
+		if (s->ti_size >= 7)
+			v = 31;
+		else
+			v = (1 << s->ti_size) - 1;
+		return v | (s->rregs[ESP_RSEQ] << 5);
+	}
+	case ESP_RES4:
+		return 0x80 | 0x20 | 0x2;
     default:
 		//write_log("read unknown 53c94 register %02x\n", saddr);
 		break;
@@ -488,6 +547,10 @@ void esp_reg_write(void *opaque, uint32_t saddr, uint64_t val)
             break;
         case CMD_RESET:
             esp_soft_reset(s);
+			// E-Matrix 530 detects existence of SCSI chip by
+			// writing CMD_RESET and then immediately checking
+			// if it reads back.
+			s->rregs[saddr] = CMD_RESET;
             break;
         case CMD_BUSRESET:
             s->rregs[ESP_RINTR] = INTR_RST;
@@ -507,6 +570,8 @@ void esp_reg_write(void *opaque, uint32_t saddr, uint64_t val)
             s->rregs[ESP_RINTR] = INTR_DC;
             s->rregs[ESP_RSEQ] = 0;
             s->rregs[ESP_RFLAGS] = 0;
+			// Masoboshi driver expects phase=0!
+			s->rregs[ESP_RSTAT] &= ~7;
             esp_raise_irq(s);
             break;
         case CMD_PAD:
@@ -531,7 +596,8 @@ void esp_reg_write(void *opaque, uint32_t saddr, uint64_t val)
             s->rregs[ESP_RINTR] = 0;
             break;
         case CMD_DISSEL:
-            s->rregs[ESP_RINTR] = 0;
+			// Masoboshi driver expects Function Complete.
+            s->rregs[ESP_RINTR] = INTR_FC;
             esp_raise_irq(s);
             break;
         default:
@@ -588,10 +654,6 @@ const VMStateDescription vmstate_esp = {
     }
 };
 #endif
-
-#define TYPE_ESP "esp"
-//#define ESP(obj) OBJECT_CHECK(SysBusESPState, (obj), TYPE_ESP)
-#define ESP(obj) (ESPState*)obj->lsistate
 
 typedef struct {
     /*< private >*/

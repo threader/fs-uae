@@ -43,7 +43,7 @@ Bit iotextptrs are never initialized. Instead, there this this initalization usi
 #endif
 #ifdef BSDSOCKET
 
-int log_bsd;
+int log_bsd = 0;
 struct socketbase *socketbases;
 static uae_u32 SockLibBase;
 
@@ -320,6 +320,7 @@ void addtosigqueue (SB, int events)
 
 	unlocksigqueue ();
 }
+
 
 void bsdsock_fake_int_handler(void)
 {

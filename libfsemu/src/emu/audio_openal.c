@@ -2,6 +2,8 @@
 #include "config.h"
 #endif
 
+#ifndef FS_EMU_DRIVERS
+
 #ifdef USE_OPENAL
 
 #include <fs/emu.h>
@@ -12,13 +14,13 @@
 
 #ifdef HAVE_AL_AL_H
 #include <AL/al.h>
-#else
-#include <al.h>
+#elif defined(HAVE_OPENAL_AL_H)
+#include <OpenAL/al.h>
 #endif
 #ifdef HAVE_AL_ALC_H
 #include <AL/alc.h>
-#else
-#include <alc.h>
+#elif defined(HAVE_OPENAL_ALC_H)
+#include <OpenAL/alc.h>
 #endif
 
 #include "libfsemu.h"
@@ -189,25 +191,24 @@ static void unqueue_old_buffers(int stream)
     fs_mutex_unlock(s->mutex);
 }
 
-void fs_emu_audio_pause_stream(int stream)
+void fs_emu_audio_set_paused(int stream, bool paused)
 {
-    fs_log("fs_emu_audio_resume_stream %d\n", stream);
-    audio_stream *s = g_streams[stream];
-    alSourcePause(s->source);
-    g_fs_emu_audio_stream_playing[stream] = 0;
-    check_al_error("alSourcePlay");
+    if (paused) {
+        fs_log("fs_emu_audio_resume_stream %d\n", stream);
+        audio_stream *s = g_streams[stream];
+        alSourcePause(s->source);
+        g_fs_emu_audio_stream_playing[stream] = 0;
+        check_al_error("alSourcePlay");
+    } else {
+        fs_log("fs_emu_audio_resume_stream %d\n", stream);
+        audio_stream *s = g_streams[stream];
+        alSourcePlay(s->source);
+        g_fs_emu_audio_stream_playing[stream] = 1;
+        check_al_error("alSourcePlay");
+    }
 }
 
-void fs_emu_audio_resume_stream(int stream)
-{
-    fs_log("fs_emu_audio_resume_stream %d\n", stream);
-    audio_stream *s = g_streams[stream];
-    alSourcePlay(s->source);
-    g_fs_emu_audio_stream_playing[stream] = 1;
-    check_al_error("alSourcePlay");
-}
-
-int fs_emu_check_audio_buffer_done(int stream, int buffer)
+int fs_emu_audio_check_buffer(int stream, int buffer)
 {
     unqueue_old_buffers(stream);
     audio_stream *s = g_streams[stream];
@@ -225,7 +226,7 @@ int fs_emu_check_audio_buffer_done(int stream, int buffer)
     return 0;
 }
 
-int fs_emu_queue_audio_buffer(int stream, int16_t* data, int size)
+int fs_emu_audio_queue_buffer(int stream, int16_t* data, int size)
 {
     if (g_fs_emu_benchmarking) {
         // no audio output while benchmarking
@@ -312,24 +313,24 @@ void fs_emu_disable_audio_stream(int stream)
 
 #endif
 
-void fs_emu_audio_set_volume(int volume)
+void fs_emu_audio_set_volume(int stream, int volume)
 {
     g_volume = volume;
     g_want_volume = g_mute ? 0.0 : g_volume / 100.0;
 }
 
-void fs_emu_audio_set_mute(int mute)
+void fs_emu_audio_set_muted(int stream, int mute)
 {
     g_mute = mute;
     g_want_volume = g_mute ? 0.0 : g_volume / 100.0;
 }
 
-int fs_emu_audio_get_volume()
+int fs_emu_audio_volume(int stream)
 {
     return g_volume;
 }
 
-int fs_emu_audio_get_mute()
+bool fs_emu_audio_muted(int stream)
 {
     return g_mute || g_volume == 0;
 }
@@ -342,7 +343,7 @@ void fs_emu_set_audio_buffer_frequency(int stream, int frequency)
 
 #endif
 
-int fs_emu_get_audio_frequency()
+int fs_emu_audio_output_frequency()
 {
     return g_audio_out_frequency;
 }
@@ -457,22 +458,26 @@ void fs_emu_audio_video_sync(int time_ms)
     }
 }
 
-static void log_openal_info()
+static void log_openal_info(void)
 {
+    fs_log("[OPENAL] Information:\n");
     if (alGetString(AL_VERSION)) {
-        fs_log("OPENAL: Version \"%s\"\n", alGetString(AL_VERSION));
+        fs_log("[OPENAL] Version \"%s\"\n", alGetString(AL_VERSION));
     }
     if (alGetString(AL_RENDERER)) {
-        fs_log("OPENAL: Renderer \"%s\"\n", alGetString(AL_RENDERER));
+        fs_log("[OPENAL] Renderer \"%s\"\n", alGetString(AL_RENDERER));
     }
     if (alGetString(AL_VENDOR)) {
-        fs_log("OPENAL: Vendor \"%s\"\n", alGetString(AL_VENDOR));
+        fs_log("[OPENAL] Vendor \"%s\"\n", alGetString(AL_VENDOR));
     }
     if (alGetString(AL_EXTENSIONS)) {
-        fs_log("OPENAL: Extensions \"%s\"\n", alGetString(AL_EXTENSIONS));
+        fs_log("[OPENAL] Extensions \"%s\"\n", alGetString(AL_EXTENSIONS));
     }
+}
 
-    fs_log("openal devices:\n");
+static void log_openal_devices(void)
+{
+    fs_log("[OPENAL] Devices:\n");
     if (alcIsExtensionPresent(NULL, "ALC_ENUMERATION_EXT") == AL_TRUE) {
         const char *s = (const char *) alcGetString(NULL,
                                                     ALC_DEVICE_SPECIFIER);
@@ -485,8 +490,7 @@ static void log_openal_info()
     } else {
         fs_log(" - no support for device enumeration\n");
     }
-
-    fs_log("OPENAL: Default device: %s\n",
+    fs_log("[OPENAL] Default device: %s\n",
            alcGetString(NULL, ALC_DEFAULT_DEVICE_SPECIFIER));
 }
 
@@ -497,31 +501,31 @@ static void openal_audio_init()
     int volume = fs_config_get_int_clamped("volume", 0, 100);
     if (volume != FS_CONFIG_NONE) {
         if (volume == 0) {
-            fs_emu_audio_set_mute(1);
+            fs_emu_audio_set_muted(FS_EMU_AUDIO_MASTER, 1);
         } else {
-            fs_emu_audio_set_volume(volume);
+            fs_emu_audio_set_volume(FS_EMU_AUDIO_MASTER, volume);
         }
     }
 
     // select the "preferred device"
     g_device = alcOpenDevice(NULL);
     if (g_device) {
-        fs_log("OPENAL: Opened device: %s\n",
+        fs_log("[OPENAL] Opened device: %s\n",
                alcGetString(g_device, ALC_DEVICE_SPECIFIER));
     } else {
-        fs_log("OPENAL: alcOpenDevice returned NULL\n");
-        fs_emu_warning("OPENAL: Could not open audio device device\n");
+        fs_log("[OPENAL] NULL from alcOpenDevice\n");
         ALenum error_code = alGetError();
-        fs_log("OPENAL: error code %d\n", error_code);
+        fs_log("[OPENAL] Error code %d\n", error_code);
         if (alGetString(error_code)) {
-            fs_log("(%s)\n", alGetString(error_code));
+            fs_log("[OPENAL] %s\n", alGetString(error_code));
         }
+        fs_emu_warning("OPENAL: Could not open audio device");
     }
-
-    log_openal_info();
     if (!g_device) {
         return;
     }
+    log_openal_info();
+    log_openal_devices();
 
     int frequencies[] = { 48000, 44100, 0 };
     if (fs_config_get_int("audio_frequency") != FS_CONFIG_NONE) {
@@ -614,20 +618,26 @@ static void openal_audio_init()
 
 void fs_emu_audio_init()
 {
-    fs_log("fs_emu_audio_init\n");
+    fs_log("OPENAL: fs_emu_audio_init\n");
     openal_audio_init();
 }
 
 static void openal_audio_shutdown()
 {
-    //alDeleteSources(NUM_SOURCES, source);
-    //alDeleteBuffers(NUM_BUFFERS, buffers);
+    for (int i = 0; i < MAX_STREAMS; i++) {
+        if (g_streams[i]) {
+            fs_log("OPENAL: Stopping stream %d\n", i);
+            alSourceStop(g_streams[i]->source);
+        }
+    }
     alcMakeContextCurrent(NULL);
-    if (!g_context) {
+    if (g_context) {
+        fs_log("OPENAL: alcDestroyContext\n");
         alcDestroyContext(g_context);
         g_context = NULL;
     }
     if (g_device) {
+        fs_log("OPENAL: alcCloseDevice\n");
         alcCloseDevice(g_device);
         g_device = NULL;
     }
@@ -635,6 +645,7 @@ static void openal_audio_shutdown()
 
 void fs_emu_audio_shutdown()
 {
+    fs_log("OPENAL: fs_emu_audio_shutdown\n");
     openal_audio_shutdown();
 }
 
@@ -702,6 +713,11 @@ void fs_emu_audio_render_debug_info(uint32_t *texture)
     int y1;
     uint32_t color;
     uint32_t *line;
+
+    if (g_audio_out_frequency == 0.0) {
+        /* no audio */
+        return;
+    }
 
     audio_stream *s = g_streams[0];
     int head_pos = s->fill_stat_buffer_pos;
@@ -778,3 +794,5 @@ fs_emu_audio_driver g_fs_emu_audio_openal_driver = {
 };
 
 #endif // USE_OPENAL
+
+#endif

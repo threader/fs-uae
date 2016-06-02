@@ -5,6 +5,7 @@
 #include <SDL.h>
 #include <stdlib.h>
 #include <fs/conf.h>
+#include <fs/lazyness.h>
 #include <fs/log.h>
 #include <fs/glib.h>
 #include <fs/ml/options.h>
@@ -17,11 +18,24 @@ static GQueue *g_input_queue = NULL;
 static fs_mutex *g_input_mutex = NULL;
 static fs_ml_input_function g_input_function = NULL;
 
+int g_fs_log_input = 0;
 int g_fs_ml_first_keyboard_index = 0;
 int g_fs_ml_first_mouse_index = 0;
 int g_fs_ml_first_joystick_index = 0;
 
-static int g_cursor_mode = 1;
+int fs_ml_first_mouse_index(void)
+{
+    return g_fs_ml_first_mouse_index;
+}
+
+/* maps SDL joystick indices to fs_ml indices */
+SDL_JoystickID g_fs_ml_sdl_joystick_index_map[MAX_SDL_JOYSTICK_IDS];
+
+#define CURSOR_MODE_ON 1
+#define CURSOR_MODE_OFF 0
+#define CURSOR_MODE_AUTO -1
+static int g_cursor_mode = CURSOR_MODE_ON;
+
 static int g_mouse_integration = 0;
 
 bool fs_ml_mouse_integration(void)
@@ -31,7 +45,7 @@ bool fs_ml_mouse_integration(void)
 
 bool fs_ml_cursor_allowed(void)
 {
-    return g_cursor_mode != 0;
+    return g_cursor_mode != CURSOR_MODE_OFF;
 }
 
 fs_ml_event* fs_ml_alloc_event()
@@ -51,19 +65,9 @@ void fs_ml_set_input_function(fs_ml_input_function function)
 
 int fs_ml_post_event(fs_ml_event* event)
 {
-    if (event->type == FS_ML_KEYDOWN || event->type == FS_ML_KEYUP) {
-        if (fs_ml_handle_keyboard_shortcut(event)) {
-            return 1;
-        }
-    }
     if (g_input_function) {
         g_input_function(event);
     }
-#if 0
-    fs_mutex_lock(g_input_mutex);
-    fs_queue_push_tail(g_input_queue, event);
-    fs_mutex_unlock(g_input_mutex);
-#endif
     return 1;
 }
 
@@ -113,6 +117,87 @@ char *fs_ml_input_fix_joystick_name(const char *name, int upper)
     return n;
 }
 
+static int fs_ml_check_joystick_blacklist_by_guid(const char *guid)
+{
+    if (false) {
+#if 0
+    } else if (strcasecmp(guid, "efbeedfe000000000000504944564944") == 0) {
+        /* VIRTUAL HID DEVICE */
+        return 1;
+#endif
+#if 0
+    } else if (strcasecmp(guid, "030000000b0400003365000000010000") == 0) {
+        /* MOSIC      SPEED-LINK COMPETITION PRO */
+        return 1;
+#endif
+    }
+    return 0;
+}
+
+GList *fs_ml_input_list_custom_keyboards(void)
+{
+#if 0
+    char *keyboards_path = g_build_filename(
+        fs_data_dir(), "Devs", NULL);
+#else
+    char *keyboards_path = g_build_filename(
+        fs_data_dir(), "Devs", "Keyboards", NULL);
+#endif
+    GList *list = NULL;
+    GDir *dir = g_dir_open(keyboards_path, 0, NULL);
+    if (dir) {
+        const gchar *name;
+        while ((name = g_dir_read_name(dir))) {
+            if (!g_str_has_suffix(name, ".ini")) {
+                continue;
+            }
+            gchar *path = g_build_filename(keyboards_path, name, NULL);
+            GKeyFile *key_file = g_key_file_new();
+            if (!g_key_file_load_from_file(
+                    key_file, path, G_KEY_FILE_NONE, NULL)) {
+                fs_log("WARNING: Could not load %s\n", path);
+                continue;
+            }
+            gchar *type = g_key_file_get_string(
+                        key_file, "device", "type", NULL);
+            if (!type || strcmp(type, "keyboard") != 0) {
+                g_free(type);
+                continue;
+            }
+            g_free(type);
+            gchar *attached = g_key_file_get_string(
+                        key_file, "device", "attached", NULL);
+            if (!attached || strcmp(attached, "1") != 0) {
+                g_free(attached);
+                continue;
+            }
+            g_free(attached);
+            char *name2 = g_strdup(name);
+            name2[strlen(name) - 4] = '\0';
+            gchar *disable_name = g_strdup_printf("%s.disabled", name2);
+            gchar *disable_path = g_build_filename(
+                keyboards_path, disable_name, NULL);
+            g_free(disable_name);
+            if (g_file_test(disable_path, G_FILE_TEST_EXISTS)) {
+                g_free(disable_path);
+                continue;
+            }
+            g_free(disable_path);
+            list = g_list_append(list, name2);
+        }
+        g_dir_close(dir);
+    }
+    list = g_list_sort(list, (GCompareFunc) g_ascii_strcasecmp);
+    gchar *disable_path = g_build_filename(
+                keyboards_path, "Keyboard.disabled", NULL);
+    if (!g_file_test(disable_path, G_FILE_TEST_EXISTS)) {
+        list = g_list_prepend(list, g_strdup("Keyboard"));
+    }
+    g_free(disable_path);
+    g_free(keyboards_path);
+    return list;
+}
+
 void fs_ml_input_init()
 {
     FS_ML_INIT_ONCE;
@@ -121,6 +206,14 @@ void fs_ml_input_init()
 
     fs_log("fs_ml_input_init\n");
 
+    g_fs_log_input = getenv("FS_DEBUG_INPUT") && \
+            getenv("FS_DEBUG_INPUT")[0] == '1';
+
+    if (fs_config_get_boolean(OPTION_LOG_INPUT) == 1) {
+        fs_log("Logging: enable input event logging\n");
+        g_fs_log_input = 1;
+    }
+
     if (fs_config_get_boolean(OPTION_MOUSE_INTEGRATION) == 1) {
         g_mouse_integration = 1;
     }
@@ -128,18 +221,20 @@ void fs_ml_input_init()
     g_cursor_mode = fs_config_get_boolean(OPTION_CURSOR);
     if (fs_config_check_auto(OPTION_CURSOR, FS_CONFIG_AUTO)) {
         if (fs_emu_mouse_integration()) {
-            g_cursor_mode = 0;
+            g_cursor_mode = CURSOR_MODE_OFF;
         } else {
-            g_cursor_mode = -1;
+            g_cursor_mode = CURSOR_MODE_AUTO;
         }
     }
 
     g_input_queue = g_queue_new();
     g_input_mutex = fs_mutex_create();
-
+#ifdef FS_EMU_DRIVERS
+    fs_log("NOT calling fs_ml_video_init\n");
+#else
     fs_log("calling fs_ml_video_init\n");
     fs_ml_video_init();
-
+#endif
     int size = sizeof(fs_ml_input_device) * FS_ML_INPUT_DEVICES_MAX;
     // allocate zeroed memory
     g_fs_ml_input_devices = g_malloc0(size);
@@ -148,12 +243,25 @@ void fs_ml_input_init()
 
     int k = 0;
     g_fs_ml_first_joystick_index = 0;
-
+#if 0
     g_fs_ml_input_devices[k].type = FS_ML_KEYBOARD;
     g_fs_ml_input_devices[k].index = k;
     g_fs_ml_input_devices[k].name = g_strdup("KEYBOARD");
     g_fs_ml_input_devices[k].alias = g_strdup("KEYBOARD");
     k += 1;
+#endif
+    GList *list = fs_ml_input_list_custom_keyboards();
+    GList *iterator = list;
+    while (iterator) {
+        const char *name = (const char *) iterator->data;
+        g_fs_ml_input_devices[k].type = FS_ML_KEYBOARD;
+        g_fs_ml_input_devices[k].index = k;
+        g_fs_ml_input_devices[k].name = g_strdup(name);
+        g_fs_ml_input_devices[k].alias = g_strdup(name);
+        k += 1;
+        iterator = g_list_next(iterator);
+    }
+    g_list_free_full(list, g_free);
 
     g_fs_ml_input_device_count = k;
     fs_ml_mouse_init();
@@ -171,7 +279,19 @@ void fs_ml_input_init()
             fs_log("WARNING: reached max num devices\n");
             break;
         }
+
+        char guid_str[33];
+        SDL_JoystickGUID guid = SDL_JoystickGetDeviceGUID(i);
+        SDL_JoystickGetGUIDString(guid, guid_str, 33);
+        guid_str[32] = '\0';
+        fs_log("SDL_JoystickGetDeviceGUID(%d) = %s\n", i, guid_str);
+        if (fs_ml_check_joystick_blacklist_by_guid(guid_str)) {
+            fs_log("- blacklisted, not opening!\n");
+            continue;
+        }
+
         SDL_Joystick *joystick = SDL_JoystickOpen(i);
+        fs_log("SDL_JoystickOpen(%d)\n", i);
 
 #ifdef USE_SDL2
         char *name = fs_ml_input_fix_joystick_name(
@@ -207,6 +327,17 @@ void fs_ml_input_init()
                g_fs_ml_input_devices[k].hats,
                g_fs_ml_input_devices[k].axes,
                g_fs_ml_input_devices[k].balls);
+
+        SDL_JoystickID instance_id = SDL_JoystickInstanceID(joystick);
+        fs_log("- instance ID = %d\n", instance_id);
+        if (instance_id >= MAX_SDL_JOYSTICK_IDS) {
+            fs_log("SDL_JoystickID > %d\n", MAX_SDL_JOYSTICK_IDS);
+            fs_log("- closing joystick\n");
+            SDL_JoystickClose(joystick);
+            continue;
+        }
+
+        g_fs_ml_sdl_joystick_index_map[instance_id] = k;
         k += 1;
     }
 

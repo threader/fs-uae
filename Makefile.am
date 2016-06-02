@@ -1,11 +1,12 @@
 # Makefile.am for FS-UAE
 
-SUBDIRS = libmpeg2
+SUBDIRS =
 
 WARNINGS =
 
 CM_CFLAGS =
 CM_CFLAGS += @FREETYPE_CFLAGS@
+CM_CFLAGS += @GLEW_CFLAGS@
 CM_CFLAGS += @GLIB_CFLAGS@
 CM_CFLAGS += @LUA_CFLAGS@
 CM_CFLAGS += @MIR_CFLAGS@
@@ -13,6 +14,7 @@ CM_CFLAGS += @OPENAL_CFLAGS@
 CM_CFLAGS += @OPENGL_CFLAGS@
 # CM_CFLAGS += @OS_CFLAGS@
 CM_CFLAGS += @PNG_CFLAGS@
+CM_CFLAGS += @QT_CFLAGS@
 CM_CFLAGS += @SDL2_CFLAGS@
 # CM_CFLAGS += @X11_CFLAGS@
 CM_CFLAGS += @ZLIB_CFLAGS@
@@ -21,15 +23,15 @@ CM_CFLAGS += $(WARNINGS)
 if F_NO_STRICT_OVERFLOW
 CM_CFLAGS += -fno-strict-overflow
 endif
-
+if F_NO_STRICT_ALIASING
+CM_CFLAGS += -fno-strict-aliasing
+endif
 if W_MISSING_DECLARATIONS
 CM_CFLAGS += -Wmissing-declarations
 endif
-
 if W_ADDRESS
 CM_CFLAGS += -Waddress
 endif
-
 #if W_MISSING_FORMAT_ATTRIBUTE
 #CM_CFLAGS += -Wmissing-format-attribute
 #endif
@@ -48,6 +50,7 @@ AM_CPPFLAGS += -DUAE -DFSUAE
 
 LIBS += @CARBON_LIBS@
 LIBS += @FREETYPE_LIBS@
+LIBS += @GLEW_LIBS@
 LIBS += @GLIB_LIBS@
 LIBS += @IOKIT_LIBS@
 # LIBS += @MIR_LIBS@
@@ -55,6 +58,7 @@ LIBS += @OPENAL_LIBS@
 LIBS += @OPENGL_LIBS@
 # LIBS += @OS_LIBS@
 LIBS += @PNG_LIBS@
+LIBS += @QT_LIBS@
 LIBS += @SDL2_LIBS@
 LIBS += @X11_LIBS@
 LIBS += @ZLIB_LIBS@
@@ -62,6 +66,16 @@ LIBS += @ZLIB_LIBS@
 AM_LDFLAGS =
 # AM_LDFLAGS += -rdynamic
 AM_LDFLAGS += @OS_LDFLAGS@
+
+if STATIC_BUILD
+AM_LDFLAGS += -static
+AM_CPPFLAGS += -DGLEW_STATIC
+AM_CPPFLAGS += -DAL_LIBTYPE_STATIC
+# Hack for OpenAL static missing libcommon.a
+LIBS += ../openal-soft/libcommon.a
+# One or more .pc files are missing -liconv
+LIBS += -liconv
+endif
 
 MSGFMT = @MSGFMT@
 ZIP = @ZIP@
@@ -90,7 +104,7 @@ BUILT_SOURCES = \
 nodist_fs_uae_SOURCES =
 
 fs_uae_SOURCES = \
-	src/fs-uae/config.c \
+        src/fs-uae/config.c \
 	src/fs-uae/config-accelerator.c \
 	src/fs-uae/config-accelerator.h \
 	src/fs-uae/config-common.c \
@@ -103,6 +117,9 @@ fs_uae_SOURCES = \
 	src/fs-uae/config-hardware.h \
 	src/fs-uae/config-model.c \
 	src/fs-uae/config-model.h \
+	src/fs-uae/config-paths.c \
+	src/fs-uae/config-sound.c \
+	src/fs-uae/config-sound.h \
 	src/fs-uae/fs-uae.h \
 	src/fs-uae/input.c \
 	src/fs-uae/joystick.c \
@@ -124,15 +141,14 @@ fs_uae_SOURCES = \
 if WINDOWS
 nodist_fs_uae_SOURCES += src/fs-uae/fs-uae.rc
 .rc.o:
-	windres $< -o $@
-%.o : %.rc
-	windres $< -o $@
+	windres $< -o $@ -I$(s)
 endif
 
 fs_uae_LDADD =
 
 fs_uae_device_helper_SOURCES = \
-	src/fs-uae/device-helper.c
+	src/fs-uae/device-helper.c \
+	src/fs-uae/paths.c
 
 fs_uae_device_helper_LDADD =
 
@@ -147,6 +163,7 @@ AM_CPPFLAGS += -I$(s)/src/od-fs/include
 AM_CPPFLAGS += -I$(s)/src/od-win32
 AM_CPPFLAGS += -I$(s)/src/od-win32/caps
 fs_uae_LDADD += libuae.a
+# libuae_a_CXXFLAGS = $(CM_CFLAGS) -fpermissive
 libuae_a_SOURCES = \
 	src/a2065.cpp \
 	src/a2091.cpp \
@@ -197,7 +214,6 @@ libuae_a_SOURCES = \
 	src/archivers/wrp/warp.h \
 	src/archivers/zip/unzip.cpp \
 	src/archivers/zip/unzip.h \
-	src/aros.rom.cpp \
 	src/audio.cpp \
 	src/autoconf.cpp \
 	src/blitter.cpp \
@@ -219,16 +235,67 @@ libuae_a_SOURCES = \
 	src/crc32.cpp \
 	src/custom.cpp \
 	src/debug.cpp \
+	src/debuginfo.cpp \
+	src/def_icons.cpp \
+	src/devices.cpp \
 	src/disk.cpp \
 	src/diskutil.cpp \
 	src/dlopen.cpp \
 	src/dongle.cpp \
+	src/dosbox/callback.h \
+	src/dosbox/cmos.cpp \
+	src/dosbox/core_full/ea_lookup.h \
+	src/dosbox/core_full/load.h \
+	src/dosbox/core_full/loadwrite.h \
+	src/dosbox/core_full/op.h \
+	src/dosbox/core_full/optable.h \
+	src/dosbox/core_full/save.h \
+	src/dosbox/core_full/string.h \
+	src/dosbox/core_full/support.h \
+	src/dosbox/core_full.cpp \
+	src/dosbox/core_normal/helpers.h \
+	src/dosbox/core_normal/prefix_0f.h \
+	src/dosbox/core_normal/prefix_66_0f.h \
+	src/dosbox/core_normal/prefix_66.h \
+	src/dosbox/core_normal/prefix_none.h \
+	src/dosbox/core_normal/string.h \
+	src/dosbox/core_normal/support.h \
+	src/dosbox/core_normal/table_ea.h \
+	src/dosbox/core_normal.cpp \
+	src/dosbox/core_simple.cpp \
+	src/dosbox/cpu.cpp \
+	src/dosbox/cpu.h \
+	src/dosbox/db_memory.cpp \
+	src/dosbox/dosbox.h \
+	src/dosbox/flags.cpp \
+	src/dosbox/fpu.cpp \
+	src/dosbox/fpu.h \
+	src/dosbox/fpu_instructions.h \
+	src/dosbox/fpu_instructions_x86.h \
+	src/dosbox/inout.h \
+	src/dosbox/instructions.h \
+	src/dosbox/keyboard.cpp \
+	src/dosbox/lazyflags.h \
+	src/dosbox/logging.h \
+	src/dosbox/mem.h \
+	src/dosbox/modrm.cpp \
+	src/dosbox/modrm.h \
+	src/dosbox/paging.cpp \
+	src/dosbox/paging.h \
+	src/dosbox/pic.cpp \
+	src/dosbox/pic.h \
+	src/dosbox/regs.h \
+	src/dosbox/setup.h \
+	src/dosbox/support.h \
+	src/dosbox/timer.cpp \
+	src/dosbox/timer.h \
 	src/drawing.cpp \
 	src/driveclick.cpp \
 	src/enforcer.cpp \
 	src/ethernet.cpp \
 	src/events.cpp \
 	src/expansion.cpp \
+	src/fake86_cpu.cpp \
 	src/fdi2raw.cpp \
 	src/filesys.cpp \
 	src/flashrom.cpp \
@@ -240,6 +307,8 @@ libuae_a_SOURCES = \
 	src/gfxutil.cpp \
 	src/hardfile.cpp \
 	src/hrtmon.rom.cpp \
+	src/ide.cpp \
+	src/idecontrollers.cpp \
 	src/identify.cpp \
 	src/include/a2065.h \
 	src/include/a2091.h \
@@ -268,6 +337,7 @@ libuae_a_SOURCES = \
 	src/include/crc32.h \
 	src/include/custom.h \
 	src/include/debug.h \
+	src/include/devices.h \
 	src/include/disk.h \
 	src/include/diskutil.h \
 	src/include/dongle.h \
@@ -280,9 +350,9 @@ libuae_a_SOURCES = \
 	src/include/events.h \
 	src/include/execio.h \
 	src/include/execlib.h \
+	src/include/fake86_cpu.h \
 	src/include/fdi2raw.h \
 	src/include/filesys.h \
-	src/include/flags_x86.h \
 	src/include/flashrom.h \
 	src/include/fpp-ieee-be.h \
 	src/include/fpp-unknown.h \
@@ -294,6 +364,8 @@ libuae_a_SOURCES = \
 	src/include/gfxboard.h \
 	src/include/gfxfilter.h \
 	src/include/gui.h \
+	src/include/ide.h \
+	src/include/idecontrollers.h \
 	src/include/identify.h \
 	src/include/inputdevice.h \
 	src/include/inputrecord.h \
@@ -314,6 +386,8 @@ libuae_a_SOURCES = \
 	src/include/osemu.h \
 	src/include/packed.h \
 	src/include/parallel.h \
+	src/include/pci.h \
+	src/include/pci_hw.h \
 	src/include/picasso96.h \
 	src/include/readcpu.h \
 	src/include/rommgr.h \
@@ -325,6 +399,8 @@ libuae_a_SOURCES = \
 	src/include/scsi.h \
 	src/include/scsidev.h \
 	src/include/serial.h \
+	src/include/sndboard.h \
+	src/include/specialmonitors.h \
 	src/include/statusline.h \
 	src/include/sysdeps.h \
 	src/include/tabletlibrary.h \
@@ -338,6 +414,7 @@ libuae_a_SOURCES = \
 	src/include/uae/caps.h \
 	src/include/uae/cdrom.h \
 	src/include/uae/cycleunit.h \
+	src/include/uae/debuginfo.h \
 	src/include/uae/dlopen.h \
 	src/include/uae/endian.h \
 	src/include/uae/enum.h \
@@ -353,14 +430,17 @@ libuae_a_SOURCES = \
 	src/include/uae/memory.h \
 	src/include/uae/mman.h \
 	src/include/uae/parser.h \
+	src/include/uae/patch.h \
 	src/include/uae/ppc.h \
 	src/include/uae/qemu.h \
-	src/include/uae/regparam.h \
+	src/include/uae/segtracker.h \
 	src/include/uae/seh.h \
 	src/include/uae/slirp.h \
-	src/include/uae/specialmonitors.h \
+	src/include/uae/socket.h \
 	src/include/uae/string.h \
+	src/include/uae/time.h \
 	src/include/uae/types.h \
+	src/include/uae/vm.h \
 	src/include/uaeexe.h \
 	src/include/uaeipc.h \
 	src/include/uaenative.h \
@@ -368,6 +448,7 @@ libuae_a_SOURCES = \
 	src/include/uaeserial.h \
 	src/include/uni_common.h \
 	src/include/unpacked.h \
+	src/include/x86.h \
 	src/include/xwin.h \
 	src/include/zarchive.h \
 	src/include/zfile.h \
@@ -376,12 +457,18 @@ libuae_a_SOURCES = \
 	src/jit/codegen_udis86.h \
 	src/jit/codegen_x86.h \
 	src/jit/compemu.h \
-	src/jit/compemu_codegen.h \
 	src/jit/compemu_fpp.cpp \
+	src/jit/compemu_midfunc_arm.h \
+	src/jit/compemu_midfunc_x86.h \
 	src/jit/compemu_support.cpp \
+	src/jit/flags_x86.h \
 	src/keybuf.cpp \
 	src/logging.cpp \
 	src/main.cpp \
+	src/mame/a2410.cpp \
+	src/mame/mameglue.h \
+	src/mame/tm34010/tms34010.cpp \
+	src/mame/tm34010/tms34010.h \
 	src/memory.cpp \
 	src/native2amiga.cpp \
 	src/ncr9x_scsi.cpp \
@@ -418,6 +505,8 @@ libuae_a_SOURCES = \
 	src/od-fs/include/win32gui.h \
 	src/od-fs/input.cpp \
 	src/od-fs/inputrecord.cpp \
+	src/od-fs/ioport.cpp \
+	src/od-fs/ioport.h \
 	src/od-fs/joystick.cpp \
 	src/od-fs/keyboard.cpp \
 	src/od-fs/libamiga.cpp \
@@ -430,12 +519,12 @@ libuae_a_SOURCES = \
 	src/od-fs/machdep/ppc/maccess.h \
 	src/od-fs/machdep/rpt.h \
 	src/od-fs/machdep/x86/maccess.h \
+	src/od-fs/mman.cpp \
 	src/od-fs/mouse.cpp \
 	src/od-fs/mp3decoder.h \
 	src/od-fs/parser.cpp \
 	src/od-fs/paths.cpp \
 	src/od-fs/roms.cpp \
-	src/od-fs/serial_host.cpp \
 	src/od-fs/sleep.h \
 	src/od-fs/sounddep/sound.h \
 	src/od-fs/statusline.cpp \
@@ -449,6 +538,8 @@ libuae_a_SOURCES = \
 	src/od-fs/uae_host.cpp \
 	src/od-fs/uaemisc.cpp \
 	src/od-fs/video.cpp \
+	src/od-fs/vpar.cpp \
+	src/od-fs/vpar.h \
 	src/od-fs/winuae_compat.h \
 	src/od-win32/caps/CapsAPI.h \
 	src/od-win32/caps/Comtype.h \
@@ -457,11 +548,13 @@ libuae_a_SOURCES = \
 	src/od-win32/debug_win32.h \
 	src/od-win32/dxwrap.h \
 	src/od-win32/md-fpp.h \
-	src/od-win32/mman.cpp \
 	src/od-win32/parser.h \
 	src/od-win32/picasso96_win.cpp \
 	src/od-win32/picasso96_win.h \
+	src/od-win32/serial_win32.cpp \
 	src/od-win32/win32_uaenet.cpp \
+	src/patch.cpp \
+	src/pci.cpp \
 	src/ppc/pixman-stubs.cpp \
 	src/ppc/ppc.cpp \
 	src/qemu.cpp \
@@ -469,10 +562,14 @@ libuae_a_SOURCES = \
 	src/qemuvga/cirrus_vga_rop.h \
 	src/qemuvga/cirrus_vga_rop2.h \
 	src/qemuvga/cirrus_vga_template.h \
+	src/qemuvga/es1370.cpp \
 	src/qemuvga/esp.cpp \
 	src/qemuvga/lsi53c710.cpp \
 	src/qemuvga/lsi53c895a.cpp \
+	src/qemuvga/ne2000.cpp \
+	src/qemuvga/ne2000.h \
 	src/qemuvga/pixel_ops.h \
+	src/qemuvga/qemuaudio.h \
 	src/qemuvga/qemumemory.h \
 	src/qemuvga/qemuuaeglue.cpp \
 	src/qemuvga/qemuuaeglue.h \
@@ -492,15 +589,21 @@ libuae_a_SOURCES = \
 	src/scsi.cpp \
 	src/scsiemul.cpp \
 	src/scsitape.cpp \
-	src/slirp.cpp \
+	src/segtracker.cpp \
+	src/slirp_uae.cpp \
 	src/specialmonitors.cpp \
 	src/statusline.cpp \
+	src/support/socket.cpp \
+	src/support/time.cpp \
+	src/test_card.cpp \
 	src/traps.cpp \
 	src/uaeexe.cpp \
 	src/uaelib.cpp \
 	src/uaenative.cpp \
 	src/uaeresource.cpp \
 	src/uaeserial.cpp \
+	src/vm.cpp \
+	src/x86.cpp \
 	src/zfile.cpp \
 	src/zfile_archive.cpp
 nodist_libuae_a_SOURCES = \
@@ -519,18 +622,19 @@ BUILT_SOURCES += $(nodist_libuae_a_SOURCES)
 noinst_LIBRARIES += libcpuemu.a
 fs_uae_LDADD += libcpuemu.a
 nodist_libcpuemu_a_SOURCES = \
-	gen/cpuemu_0.cpp \
-	gen/cpuemu_11.cpp \
-	gen/cpuemu_13.cpp \
-	gen/cpuemu_20.cpp \
-	gen/cpuemu_21.cpp \
-	gen/cpuemu_22.cpp \
-	gen/cpuemu_23.cpp \
-	gen/cpuemu_24.cpp \
-	gen/cpuemu_31.cpp \
-	gen/cpuemu_32.cpp \
-	gen/cpuemu_33.cpp \
-	gen/cpuemu_40.cpp
+        gen/cpuemu_0.cpp \
+        gen/cpuemu_11.cpp \
+        gen/cpuemu_13.cpp \
+        gen/cpuemu_20.cpp \
+        gen/cpuemu_21.cpp \
+        gen/cpuemu_22.cpp \
+        gen/cpuemu_23.cpp \
+        gen/cpuemu_24.cpp \
+        gen/cpuemu_31.cpp \
+        gen/cpuemu_32.cpp \
+        gen/cpuemu_33.cpp \
+        gen/cpuemu_40.cpp \
+        gen/cpuemu_50.cpp
 BUILT_SOURCES += $(nodist_libcpuemu_a_SOURCES)
 
 noinst_LIBRARIES += libfsemu.a
@@ -543,20 +647,28 @@ libfsemu_a_SOURCES = \
 	libfsemu/include/fs/data.h \
 	libfsemu/include/fs/defines.h \
 	libfsemu/include/fs/emu.h \
-	libfsemu/include/fs/emu/dialog.h \
+	libfsemu/include/fs/emu/actions.h \
+        libfsemu/include/fs/emu/audio.h \
+        libfsemu/include/fs/emu/benchmark.h \
+        libfsemu/include/fs/emu/buffer.h \
+        libfsemu/include/fs/emu/cef.h \
+        libfsemu/include/fs/emu/dialog.h \
 	libfsemu/include/fs/emu/hacks.h \
+	libfsemu/include/fs/emu/input.h \
+	libfsemu/include/fs/emu/monitor.h \
 	libfsemu/include/fs/emu/options.h \
-	libfsemu/include/fs/emu/video.h \
+        libfsemu/include/fs/emu/path.h \
+        libfsemu/include/fs/emu/video.h \
 	libfsemu/include/fs/endian.h \
 	libfsemu/include/fs/eventlog.h \
 	libfsemu/include/fs/filesys.h \
 	libfsemu/include/fs/fs.h \
 	libfsemu/include/fs/glib.h \
-	libfsemu/include/fs/glu.h \
 	libfsemu/include/fs/i18n.h \
 	libfsemu/include/fs/image.h \
 	libfsemu/include/fs/inifile.h \
 	libfsemu/include/fs/init.h \
+	libfsemu/include/fs/lazyness.h \
 	libfsemu/include/fs/log.h \
 	libfsemu/include/fs/main.h \
 	libfsemu/include/fs/malloc.h \
@@ -567,11 +679,15 @@ libfsemu_a_SOURCES = \
 	libfsemu/include/fs/thread.h \
 	libfsemu/include/fs/time.h \
 	libfsemu/include/fs/util.h \
-	libfsemu/src/base.c \
+        libfsemu/src/audio/audio-common.c \
+        libfsemu/src/audio/audio-driver-dummy.c \
+        libfsemu/src/audio/audio-driver-openal.c \
+        libfsemu/src/audio/audio-driver-sdl.c \
+        libfsemu/src/audio/audio-init.c \
+        libfsemu/src/base.c \
 	libfsemu/src/conf.c \
 	libfsemu/src/data.c \
 	libfsemu/src/emu/actions.c \
-	libfsemu/src/emu/actions.h \
 	libfsemu/src/emu/audio.h \
 	libfsemu/src/emu/audio_common.c \
 	libfsemu/src/emu/audio_debug.c \
@@ -579,6 +695,7 @@ libfsemu_a_SOURCES = \
 	libfsemu/src/emu/audio_dummy.c \
 	libfsemu/src/emu/audio_openal.c \
 	libfsemu/src/emu/audio_sdl.c \
+        libfsemu/src/emu/cef.cpp \
 	libfsemu/src/emu/dialog.c \
 	libfsemu/src/emu/dialog.h \
 	libfsemu/src/emu/emu.c \
@@ -614,11 +731,15 @@ libfsemu_a_SOURCES = \
 	libfsemu/src/emu/xml_shader.h \
 	libfsemu/src/eventlog.c \
 	libfsemu/src/filesys.c \
-	libfsemu/src/malloc.c \
 	libfsemu/src/image.c \
+	libfsemu/src/input/input-actions.c \
+	libfsemu/src/input/input-common.c \
+	libfsemu/src/input/input-driver-sdl.c \
+	libfsemu/src/input/input-init.c \
 	libfsemu/src/inifile.c \
 	libfsemu/src/init.c \
 	libfsemu/src/log.c \
+	libfsemu/src/malloc.c \
 	libfsemu/src/ml/clock.c \
 	libfsemu/src/ml/config.c \
 	libfsemu/src/ml/input.c \
@@ -640,9 +761,22 @@ libfsemu_a_SOURCES = \
 	libfsemu/src/ml/windows.c \
 	libfsemu/src/ml/x11.c \
 	libfsemu/src/opengl.c \
-	libfsemu/src/ref.c \
+        libfsemu/src/path.c \
+        libfsemu/src/ref.c \
 	libfsemu/src/thread.c \
-	libfsemu/src/time.c
+	libfsemu/src/time.c \
+        libfsemu/src/video/video-buffer.c \
+        libfsemu/src/video/video-common.c \
+        libfsemu/src/video/video-common-sdl.c \
+        libfsemu/src/video/video-driver-dummy.c \
+        libfsemu/src/video/video-driver-sdl.c \
+        libfsemu/src/video/video-driver-sdl-software.c \
+        libfsemu/src/video/video-init.c
+
+if BUILTIN_CEF
+AM_CPPFLAGS += -I$(s)/cef
+fs_uae_LDADD += cef/libcef_dll/libcef_dll_wrapper.a -L $(s)/cef/Release -lcef
+endif
 
 if BUILTIN_GLEE
 noinst_LIBRARIES += libglee.a
@@ -769,6 +903,11 @@ libslirp_a_SOURCES = \
 endif
 endif
 
+if WITH_TOCCATA
+fs_uae_SOURCES += \
+	src/sndboard.cpp
+endif
+
 if WITH_UDIS86
 noinst_LIBRARIES += libudis86.a
 AM_CPPFLAGS += -I$(s)/libudis86/include
@@ -873,20 +1012,11 @@ libprowizard_a_SOURCES = \
 	prowizard/prowiz.c \
 	prowizard/r/AC1D_packer.c \
 	prowizard/r/AMOS-MusicBank.c \
-	prowizard/r/AMOS-PowerPackerBank.c \
 	prowizard/r/BP-Soundmonitor.c \
 	prowizard/r/BSI-FutureComposer.c \
-	prowizard/r/Bytekiller.c \
 	prowizard/r/ChipTracker.c \
-	prowizard/r/Crunchmania-Address.c \
-	prowizard/r/Crunchmania-Simple.c \
-	prowizard/r/datacrunchers.c \
-	prowizard/r/DefjamCruncher32-pro.c \
 	prowizard/r/DigiBooster17.c \
 	prowizard/r/DigitalIllusion.c \
-	prowizard/r/DoubleAction.c \
-	prowizard/r/Dragpack100.c \
-	prowizard/r/Dragpack252.c \
 	prowizard/r/EurekaPacker.c \
 	prowizard/r/FastTracker2.c \
 	prowizard/r/FC-M-Packer.c \
@@ -895,19 +1025,13 @@ libprowizard_a_SOURCES = \
 	prowizard/r/FutureComposer14.c \
 	prowizard/r/FuzzacPacker.c \
 	prowizard/r/GMC.c \
-	prowizard/r/GNUPacker12.c \
 	prowizard/r/GnuPlayer.c \
 	prowizard/r/GPMO.c \
 	prowizard/r/HeatseekerMC10.c \
 	prowizard/r/HornetPacker.c \
-	prowizard/r/HQC2.c \
 	prowizard/r/JamCracker.c \
 	prowizard/r/KefrensSoundMachine.c \
-	prowizard/r/MasterCruncher30-Address.c \
-	prowizard/r/MaxPacker12.c \
 	prowizard/r/MED-Octamed.c \
-	prowizard/r/MegaCruncher.c \
-	prowizard/r/MegaCruncher-Object.c \
 	prowizard/r/MOD-compatible.c \
 	prowizard/r/ModuleProtector.c \
 	prowizard/r/Mugician.c \
@@ -922,10 +1046,6 @@ libprowizard_a_SOURCES = \
 	prowizard/r/PhaPacker.c \
 	prowizard/r/PolkaPacker.c \
 	prowizard/r/PowerMusic.c \
-	prowizard/r/PowerPacker23.c \
-	prowizard/r/PowerPacker30.c \
-	prowizard/r/PowerPacker40.c \
-	prowizard/r/PowerPacker40-library.c \
 	prowizard/r/Promizer01.c \
 	prowizard/r/Promizer10c.c \
 	prowizard/r/Promizer18a.c \
@@ -937,28 +1057,15 @@ libprowizard_a_SOURCES = \
 	prowizard/r/Prorunner10.c \
 	prowizard/r/Prorunner20.c \
 	prowizard/r/QuadraComposer.c \
-	prowizard/r/RelokIt10.c \
 	prowizard/r/SGT-Packer.c \
 	prowizard/r/skizzo.c \
 	prowizard/r/SkytPacker.c \
 	prowizard/r/SoundFX.c \
 	prowizard/r/SoundTracker26.c \
 	prowizard/r/SoundTracker.c \
-	prowizard/r/SpikeCruncher.c \
 	prowizard/r/StartrekkerPack.c \
 	prowizard/r/StimPacker.c \
 	prowizard/r/StoneArtsPlayer.c \
-	prowizard/r/StoneCracker270.c \
-	prowizard/r/StoneCracker299b.c \
-	prowizard/r/StoneCracker299.c \
-	prowizard/r/StoneCracker299d.c \
-	prowizard/r/StoneCracker300.c \
-	prowizard/r/StoneCracker310.c \
-	prowizard/r/SuperCruncher27.c \
-	prowizard/r/SyncroPacker46.c \
-	prowizard/r/TetraPack102.c \
-	prowizard/r/TetraPack21.c \
-	prowizard/r/TetraPack22.c \
 	prowizard/r/TheDarkDemon.c \
 	prowizard/r/ThePlayer22a.c \
 	prowizard/r/ThePlayer30a.c \
@@ -967,16 +1074,11 @@ libprowizard_a_SOURCES = \
 	prowizard/r/ThePlayer50a.c \
 	prowizard/r/ThePlayer60a.c \
 	prowizard/r/ThePlayer61a.c \
-	prowizard/r/TimeCruncher17.c \
 	prowizard/r/TitanicsPlayer.c \
 	prowizard/r/TMK.c \
-	prowizard/r/TNMCruncher.c \
 	prowizard/r/TrackerPacker1.c \
 	prowizard/r/TrackerPacker2.c \
 	prowizard/r/TrackerPacker3.c \
-	prowizard/r/TreasurePattern.c \
-	prowizard/r/TryItCruncher101.c \
-	prowizard/r/TurboSqueezer61.c \
 	prowizard/r/UnicTracker2.c \
 	prowizard/r/UnicTracker.c \
 	prowizard/r/Viruz2.c \
@@ -1010,6 +1112,7 @@ libsoftfloat_a_SOURCES = \
 endif
 
 if BUILTIN_LIBMPEG2
+SUBDIRS += libmpeg2
 AM_CPPFLAGS += -I$(s)/libmpeg2/include
 fs_uae_LDADD += \
 	libmpeg2/libmpeg2/.libs/libmpeg2.a \
@@ -1083,10 +1186,12 @@ EXTRA_DIST = $(TESTS) $(EXTRA_TESTS) \
 	debian/source \
 	debian/source/format \
 	dist/linux/build.py \
-	dist/linux/standalone.py \
+	dist/arch.py \
+	dist/linux/standalone-linux.py \
 	dist/macosx/fs-uae-config.icns \
 	dist/macosx/fs-uae.icns \
 	dist/macosx/PkgInfo \
+	dist/macosx/sign.py \
 	dist/macosx/standalone.py \
 	dist/windows/clib.py \
 	dist/windows/iscc.py \
@@ -1102,6 +1207,9 @@ EXTRA_DIST = $(TESTS) $(EXTRA_TESTS) \
 	flac/include/FLAC/stream_encoder.h \
 	fs-uae.spec \
 	icon/fs-uae.ico \
+	libinih/ini.c \
+	libinih/ini.h \
+	libinih/LICENSE.txt \
 	libudis86/README \
 	licenses/fs-uae.txt \
 	licenses/glib.txt \
@@ -1116,18 +1224,29 @@ EXTRA_DIST = $(TESTS) $(EXTRA_TESTS) \
 	src/filesys_bootrom.cpp \
 	src/fs-uae/fs-uae.rc.in \
 	src/inputevents.def \
-	src/jit/compemu_optimizer_x86.cpp \
-	src/jit/compemu_raw_x86.cpp \
+	src/jit/codegen_x86.cpp \
+	src/jit/compemu_midfunc_x86.cpp \
+	src/jit/compemu_prefs.cpp \
+	src/jit/exception_handler.cpp \
+	src/mame/tm34010/34010fld.c \
+	src/mame/tm34010/34010tbl.c \
+	src/mame/tm34010/34010ops.c \
+	src/mame/tm34010/34010ops.h \
+	src/mame/tm34010/34010gfx.c \
 	src/od-fs/bsdsocket_posix.cpp \
 	src/od-win32/bsdsock.cpp \
+        src/od-win32/mman.cpp \
 	src/p96_blit.cpp \
 	src/sinctable.cpp \
 	src/table68k \
 	share/applications \
 	share/fs-uae \
-	share/icons
+	share/icons \
+	share/mime
 
 CLEANFILES = $(BUILT_SOURCES)
+
+if CODEGEN
 
 gen/blit.h: gen/genblitter$(EXEEXT)
 	$(b)/gen/genblitter$(EXEEXT) i > $(b)/gen/blit.h
@@ -1176,6 +1295,8 @@ gen/cpuemu_33.cpp: gen/cpuemu_0.cpp
 
 gen/cpuemu_40.cpp: gen/cpuemu_0.cpp
 
+gen/cpuemu_50.cpp: gen/cpuemu_0.cpp
+
 gen/cpustbl.cpp: gen/cpuemu_0.cpp
 
 gen/cputbl.h: gen/cpuemu_0.cpp
@@ -1183,16 +1304,20 @@ gen/cputbl.h: gen/cpuemu_0.cpp
 gen/linetoscr.cpp: gen/genlinetoscr$(EXEEXT)
 	$(b)/gen/genlinetoscr$(EXEEXT) > $(b)/gen/linetoscr.cpp
 
+endif
+
 catalogs = \
 	share/locale/cs/LC_MESSAGES/fs-uae.mo \
 	share/locale/da/LC_MESSAGES/fs-uae.mo \
 	share/locale/de/LC_MESSAGES/fs-uae.mo \
-	share/locale/el/LC_MESSAGES/fs-uae.mo \
+	share/locale/eo/LC_MESSAGES/fs-uae.mo \
 	share/locale/es/LC_MESSAGES/fs-uae.mo \
 	share/locale/fi/LC_MESSAGES/fs-uae.mo \
 	share/locale/fr/LC_MESSAGES/fs-uae.mo \
+	share/locale/hu/LC_MESSAGES/fs-uae.mo \
 	share/locale/it/LC_MESSAGES/fs-uae.mo \
 	share/locale/nb/LC_MESSAGES/fs-uae.mo \
+	share/locale/nl/LC_MESSAGES/fs-uae.mo \
 	share/locale/pl/LC_MESSAGES/fs-uae.mo \
 	share/locale/pt/LC_MESSAGES/fs-uae.mo \
 	share/locale/pt_BR/LC_MESSAGES/fs-uae.mo \
@@ -1212,9 +1337,9 @@ share/locale/de/LC_MESSAGES/fs-uae.mo: po/de.po
 	mkdir -p share/locale/de/LC_MESSAGES
 	$(MSGFMT) --verbose $(s)/po/de.po -o $@
 
-share/locale/el/LC_MESSAGES/fs-uae.mo: po/el.po
-	mkdir -p share/locale/el/LC_MESSAGES
-	$(MSGFMT) --verbose $(s)/po/el.po -o $@
+share/locale/eo/LC_MESSAGES/fs-uae.mo: po/eo.po
+	mkdir -p share/locale/eo/LC_MESSAGES
+	$(MSGFMT) --verbose $(s)/po/eo.po -o $@
 
 share/locale/es/LC_MESSAGES/fs-uae.mo: po/es.po
 	mkdir -p share/locale/es/LC_MESSAGES
@@ -1228,6 +1353,10 @@ share/locale/fr/LC_MESSAGES/fs-uae.mo: po/fr.po
 	mkdir -p share/locale/fr/LC_MESSAGES
 	$(MSGFMT) --verbose $(s)/po/fr.po -o $@
 
+share/locale/hu/LC_MESSAGES/fs-uae.mo: po/hu.po
+	mkdir -p share/locale/hu/LC_MESSAGES
+	$(MSGFMT) --verbose $(s)/po/hu.po -o $@
+
 share/locale/it/LC_MESSAGES/fs-uae.mo: po/it.po
 	mkdir -p share/locale/it/LC_MESSAGES
 	$(MSGFMT) --verbose $(s)/po/it.po -o $@
@@ -1235,6 +1364,10 @@ share/locale/it/LC_MESSAGES/fs-uae.mo: po/it.po
 share/locale/nb/LC_MESSAGES/fs-uae.mo: po/nb.po
 	mkdir -p share/locale/nb/LC_MESSAGES
 	$(MSGFMT) --verbose $(s)/po/nb.po -o $@
+
+share/locale/nl/LC_MESSAGES/fs-uae.mo: po/nl.po
+	mkdir -p share/locale/nl/LC_MESSAGES
+	$(MSGFMT) --verbose $(s)/po/nl.po -o $@
 
 share/locale/pl/LC_MESSAGES/fs-uae.mo: po/pl.po
 	mkdir -p share/locale/pl/LC_MESSAGES
@@ -1264,8 +1397,8 @@ mo: $(catalogs)
 
 fs-uae.dat: $(catalogs)
 	rm -f fs-uae.dat
-	cd $(s) && $(ZIP) -r -Z store $(abs_builddir)/fs-uae.dat share
-	cd $(b) && $(ZIP) -r -Z store $(abs_builddir)/fs-uae.dat share
+	cd $(s) && $(ZIP) -r $(abs_builddir)/fs-uae.dat share
+	cd $(b) && $(ZIP) -r $(abs_builddir)/fs-uae.dat share
 
 all-local: mo fs-uae.dat
 
@@ -1274,19 +1407,33 @@ install-data-hook: mo fs-uae.dat
 	mkdir -p $(DESTDIR)$(datadir)/applications
 	cp -R $(s)/share/applications/* $(DESTDIR)$(datadir)/applications
 	mkdir -p $(DESTDIR)$(datadir)/fs-uae
-	cp -R $(s)/share/fs-uae/* $(DESTDIR)$(datadir)/fs-uae
+	touch $(DESTDIR)$(datadir)/fs-uae/share-dir
+	cp fs-uae.dat $(DESTDIR)$(datadir)/fs-uae
 	mkdir -p $(DESTDIR)$(datadir)/icons
 	cp -R $(s)/share/icons/* $(DESTDIR)$(datadir)/icons
 	mkdir -p $(DESTDIR)$(datadir)/locale
 	cp -R $(b)/share/locale/* $(DESTDIR)$(datadir)/locale
-	cp fs-uae.dat $(DESTDIR)$(datadir)/fs-uae
+	mkdir -p $(DESTDIR)$(datadir)/mime
+	cp -R $(s)/share/mime/* $(DESTDIR)$(datadir)/mime
 
 uninstall-local:
 	rm -f $(DESTDIR)$(datadir)/applications/fs-uae.desktop
 	rm -Rf $(DESTDIR)$(datadir)/fs-uae
-	find $(DESTDIR)$(datadir)/locale -name fs-uae.mo -delete
 	find $(DESTDIR)$(datadir)/icons/hicolor -name fs-uae.png -delete
+	find $(DESTDIR)$(datadir)/locale -name fs-uae.mo -delete
+	rm -f $(DESTDIR)$(datadir)/mime/packages/fs-uae.xml
 
 clean-local:
 	rm -f fs-uae.dat
 	find share -name fs-uae.mo -delete
+
+fs-uae-dist:
+	$(MAKE) -C dist/@OS_NAME@
+
+standalone: fs-uae$(EXEEXT) fs-uae.dat
+	@echo "Stripping fs-uae$(EXEEXT)"
+	strip fs-uae$(EXEEXT)
+	@echo "Appending fs-uae.dat"
+	cat fs-uae.dat >> fs-uae$(EXEEXT)
+	@echo "Correcting zip offsets"
+	zip -A fs-uae$(EXEEXT)

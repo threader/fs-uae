@@ -4,6 +4,7 @@
 #include "autoconf.h"
 #include "clipboard.h"
 #include "debug.h"
+#include "enforcer.h"
 #include "filesys.h"
 #include "fsdb.h"
 #include "gui.h"
@@ -16,33 +17,39 @@
 #include "uae.h"
 #include "xwin.h"
 
-void graphics_reset(void)
+void graphics_reset(bool force)
 {
-    LOG_STUB("");
+    LOG_STUB("force=%d", force);
 }
 
-void clipboard_vsync (void) {
-
-}
-
-void gui_lock (void) {
+void clipboard_vsync (void)
+{
 
 }
 
-void gui_unlock (void) {
+void gui_lock (void)
+{
 
 }
 
-void gui_display (int shortcut) {
+void gui_unlock (void)
+{
+
+}
+
+void gui_display (int shortcut)
+{
     STUB("shortcut=%d", shortcut);
 }
 
-int gui_init() {
+int gui_init()
+{
     LOG_STUB("");
     return 1;
 }
 
-void gui_exit() {
+void gui_exit()
+{
     LOG_STUB("");
 }
 
@@ -132,16 +139,20 @@ bool vsync_switchmode (int hz) {
 }
 
 #ifndef AHI
-void ahi_hsync (void) {
+
+#include "uae/ahi.h"
+
+void ahi_hsync (void)
+{
     VERBOSE_STUB("");
 }
-#endif
 
-#ifndef AHI
-int enforcer_disable(void) {
+int enforcer_disable(void)
+{
     STUB("");
     return 1;
 }
+
 #endif
 
 void refreshtitle (void) {
@@ -172,9 +183,10 @@ void target_restart (void) {
     STUB("");
 }
 
-void target_quit (void) {
-    write_log("UAE emulation core is quitting\n");
-    printf("UAE emulation core is quitting\n");
+void target_quit (void)
+{
+    write_log("UAE: Stopping\n");
+    printf("UAE: Stopping\n");
 }
 
 void target_fixup_options (struct uae_prefs *p) {

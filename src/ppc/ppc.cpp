@@ -2,6 +2,8 @@
 #include "sysconfig.h"
 #include "sysdeps.h"
 
+#ifdef WITH_PPC
+
 #include "options.h"
 #include "threaddep/thread.h"
 #include "machdep/rpt.h"
@@ -10,6 +12,8 @@
 #include "debug.h"
 #include "custom.h"
 #include "uae.h"
+#include "gui.h"
+#include "autoconf.h"
 #include "uae/dlopen.h"
 #include "uae/log.h"
 #include "uae/ppc.h"
@@ -87,18 +91,19 @@ void uae_ppc_spinlock_release(void)
 static void uae_ppc_spinlock_create(void)
 {
 #ifdef WIN32_SPINLOCK
+#if SPINLOCK_DEBUG
+	write_log(_T("uae_ppc_spinlock_create\n"));
+#endif
 	if (ppc_cs_initialized) {
 		DeleteCriticalSection(&ppc_cs1);
 		DeleteCriticalSection(&ppc_cs2);
 	}
 	InitializeCriticalSectionAndSpinCount(&ppc_cs1, CRITICAL_SECTION_SPIN_COUNT);
 	InitializeCriticalSectionAndSpinCount(&ppc_cs2, CRITICAL_SECTION_SPIN_COUNT);
-	ppc_cs_initialized = true;
-#else
-
-#endif
 #if SPINLOCK_DEBUG
 	spinlock_cnt = 0;
+#endif
+	ppc_cs_initialized = true;
 #endif
 }
 
@@ -228,7 +233,11 @@ static bool load_qemu_implementation(void)
 
 	UAE_DLHANDLE handle = uae_qemu_uae_init();
 	if (!handle) {
+#ifdef FSUAE
 		gui_message(_T("PPC: Error loading qemu-uae plugin\n"));
+#else
+		notify_user (NUMSG_NO_PPC);
+#endif
 		return false;
 	}
 	write_log(_T("PPC: Loaded qemu-uae library at %p\n"), handle);
@@ -253,7 +262,7 @@ static bool load_qemu_implementation(void)
 	uae_patch_library_ppc(handle);
 	return true;
 #else
-        return false;
+	return false;
 #endif
 }
 
@@ -349,9 +358,14 @@ static PPCLockStatus get_ppc_lock(PPCLockMethod method)
 			trylock_called = true;
 		}
 	} else {
+#ifdef FSUAE
 		//uae_abort("invalid ppc loc method");
 		write_log("invalid ppc loc method");
 		abort();
+#else
+		write_log("?\n");
+		return PPC_NO_LOCK_NEEDED;
+#endif
 	}
 }
 
@@ -474,7 +488,6 @@ void ppc_map_banks(uae_u32 start, uae_u32 size, const TCHAR *name, void *addr, b
 	if (impl.in_cpu_thread() == false) {
 		uae_ppc_spinlock_get();
 	}
-
 	free((void*)r.name);
 }
 
@@ -486,13 +499,13 @@ void uae_ppc_get_model(const TCHAR **model, uint32_t *hid1)
 		*model = currprefs.ppc_model;
 	} else {
 		/* Set default CPU model based on accelerator board */
-		if (currprefs.cpuboard_type == BOARD_BLIZZARDPPC) {
+		if (ISCPUBOARD(BOARD_BLIZZARD, BOARD_BLIZZARD_SUB_PPC)) {
 			*model = _T("603ev");
 		} else {
 			*model = _T("604e");
 		}
 	}
-	if (currprefs.cpuboard_type == BOARD_BLIZZARDPPC) {
+	if (ISCPUBOARD(BOARD_BLIZZARD, BOARD_BLIZZARD_SUB_PPC)) {
 		*hid1 = 0xc0000000; // 4x
 	} else {
 		*hid1 = 0xa0000000; // 4x
@@ -508,11 +521,9 @@ static void cpu_init(void)
 		uint32_t pvr = 0;
 		if (_tcsicmp(model, _T("603ev")) == 0) {
 			pvr = BLIZZPPC_PVR;
-		}
-		else if (_tcsicmp(model, _T("604e")) == 0) {
+		} else if (_tcsicmp(model, _T("604e")) == 0) {
 			pvr = CSPPC_PVR;
-		}
-		else {
+		} else {
 			pvr = CSPPC_PVR;
 			write_log(_T("PPC: Unrecognized model \"%s\", using PVR 0x%08x\n"), model, pvr);
 		}
@@ -926,3 +937,14 @@ UAE_EXTERN_C void fsuae_ppc_pause(int pause)
 }
 
 #endif
+
+#else
+
+#include "uae/ppc.h"
+
+bool uae_self_is_ppc(void)
+{
+	return false;
+}
+
+#endif /* WITH_PPC */

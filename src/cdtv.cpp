@@ -17,6 +17,8 @@
 #include "sysconfig.h"
 #include "sysdeps.h"
 
+#ifdef CDTV
+
 #include "options.h"
 #include "uae/memory.h"
 #include "custom.h"
@@ -30,6 +32,7 @@
 #include "a2091.h"
 #include "uae.h"
 #include "savestate.h"
+#include "scsi.h"
 
 /* DMAC CNTR bits. */
 #define CNTR_TCEN               (1<<7)
@@ -1044,7 +1047,7 @@ static void dmac_start_dma (void)
 	if (!(dmac_cntr & CNTR_PDMD)) { // non-scsi dma
 		write_comm_pipe_u32 (&requests, 0x0100, 1);
 	} else {
-		scsi_dmac_start_dma (&wd_cdtv);
+		scsi_dmac_a2091_start_dma (wd_cdtv);
 	}
 }
 static void dmac_stop_dma (void)
@@ -1052,7 +1055,7 @@ static void dmac_stop_dma (void)
 	if (!(dmac_cntr & CNTR_PDMD)) { // non-scsi dma
 		;
 	} else {
-		scsi_dmac_stop_dma (&wd_cdtv);
+		scsi_dmac_a2091_stop_dma (wd_cdtv);
 	}
 }
 
@@ -1065,7 +1068,7 @@ static void checkint (void)
 {
 	int irq = 0;
 
-	if (currprefs.cs_cdtvscsi && (wdscsi_getauxstatus (&wd_cdtv) & 0x80)) {
+	if (currprefs.cs_cdtvscsi && (wdscsi_getauxstatus (&wd_cdtv->wc) & 0x80)) {
 		dmac_istr |= ISTR_INTS;
 		if ((dmac_cntr & CNTR_INTEN) && (dmac_istr & ISTR_INTS))
 			irq = 1;
@@ -1257,11 +1260,11 @@ static uae_u32 dmac_bget2 (uaecptr addr)
 		break;
 	case 0x91:
 		if (currprefs.cs_cdtvscsi)
-			v = wdscsi_getauxstatus (&wd_cdtv);
+			v = wdscsi_getauxstatus (&wd_cdtv->wc);
 		break;
 	case 0x93:
 		if (currprefs.cs_cdtvscsi) {
-			v = wdscsi_get (&wd_cdtv);
+			v = wdscsi_get (&wd_cdtv->wc, wd_cdtv);
 			checkint ();
 		}
 		break;
@@ -1364,13 +1367,13 @@ static void dmac_bput2 (uaecptr addr, uae_u32 b)
 		break;
 	case 0x91:
 		if (currprefs.cs_cdtvscsi) {
-			wdscsi_sasr (&wd_cdtv, b);
+			wdscsi_sasr (&wd_cdtv->wc, b);
 			checkint ();
 		}
 		break;
 	case 0x93:
 		if (currprefs.cs_cdtvscsi) {
-			wdscsi_put (&wd_cdtv, b);
+			wdscsi_put (&wd_cdtv->wc, wd_cdtv, b);
 			checkint ();
 		}
 		break;
@@ -1409,9 +1412,6 @@ static void dmac_bput2 (uaecptr addr, uae_u32 b)
 static uae_u32 REGPARAM2 dmac_lget (uaecptr addr)
 {
 	uae_u32 v;
-#ifdef JIT
-	special_mem |= S_READ;
-#endif
 	addr &= 65535;
 	v = (dmac_bget2 (addr) << 24) | (dmac_bget2 (addr + 1) << 16) |
 		(dmac_bget2 (addr + 2) << 8) | (dmac_bget2 (addr + 3));
@@ -1424,9 +1424,6 @@ static uae_u32 REGPARAM2 dmac_lget (uaecptr addr)
 static uae_u32 REGPARAM2 dmac_wget (uaecptr addr)
 {
 	uae_u32 v;
-#ifdef JIT
-	special_mem |= S_READ;
-#endif
 	addr &= 65535;
 	v = (dmac_bget2 (addr) << 8) | dmac_bget2 (addr + 1);
 #ifdef CDTV_DEBUG
@@ -1438,9 +1435,6 @@ static uae_u32 REGPARAM2 dmac_wget (uaecptr addr)
 static uae_u32 REGPARAM2 dmac_bget (uaecptr addr)
 {
 	uae_u32 v;
-#ifdef JIT
-	special_mem |= S_READ;
-#endif
 	addr &= 65535;
 	v = dmac_bget2 (addr);
 	if (configured <= 0)
@@ -1450,9 +1444,6 @@ static uae_u32 REGPARAM2 dmac_bget (uaecptr addr)
 
 static void REGPARAM2 dmac_lput (uaecptr addr, uae_u32 l)
 {
-#ifdef JIT
-	special_mem |= S_WRITE;
-#endif
 	addr &= 65535;
 #ifdef CDTV_DEBUG
 	write_log (_T("dmac_lput %08X=%08X PC=%08X\n"), addr, l, M68K_GETPC);
@@ -1465,9 +1456,6 @@ static void REGPARAM2 dmac_lput (uaecptr addr, uae_u32 l)
 
 static void REGPARAM2 dmac_wput (uaecptr addr, uae_u32 w)
 {
-#ifdef JIT
-	special_mem |= S_WRITE;
-#endif
 	addr &= 65535;
 #ifdef CDTV_DEBUG
 	write_log (_T("dmac_wput %04X=%04X PC=%08X\n"), addr, w & 65535, M68K_GETPC);
@@ -1478,9 +1466,6 @@ static void REGPARAM2 dmac_wput (uaecptr addr, uae_u32 w)
 
 static void REGPARAM2 dmac_bput (uaecptr addr, uae_u32 b)
 {
-#ifdef JIT
-	special_mem |= S_WRITE;
-#endif
 	addr &= 65535;
 	b &= 0xff;
 	if (addr == 0x48) {
@@ -1528,28 +1513,21 @@ static void ew (int addr, uae_u32 value)
 static uae_u32 REGPARAM2 dmac_wgeti (uaecptr addr)
 {
 	uae_u32 v = 0xffff;
-#ifdef JIT
-	special_mem |= S_READ;
-#endif
 	return v;
 }
 static uae_u32 REGPARAM2 dmac_lgeti (uaecptr addr)
 {
 	uae_u32 v = 0xffff;
-#ifdef JIT
-	special_mem |= S_READ;
-#endif
 	return v;
 }
-
 
 addrbank dmac_bank = {
 	dmac_lget, dmac_wget, dmac_bget,
 	dmac_lput, dmac_wput, dmac_bput,
 	default_xlate, default_check, NULL, NULL, _T("CDTV DMAC/CD Controller"),
-	dmac_lgeti, dmac_wgeti, ABFLAG_IO
+	dmac_lgeti, dmac_wgeti,
+	ABFLAG_IO, S_READ, S_WRITE
 };
-
 
 /* CDTV batterybacked RAM emulation */
 #define CDTV_NVRAM_MASK 16383
@@ -1633,11 +1611,6 @@ uae_u8 cdtv_battram_read (int addr)
 	return v;
 }
 
-int cdtv_add_scsi_hd_unit (int ch, struct uaedev_config_info *ci)
-{
-	return add_wd_scsi_hd (&wd_cdtv, ch, NULL, ci, 1);
-}
-
 void cdtv_free (void)
 {
 	if (thread_alive > 0) {
@@ -1654,7 +1627,7 @@ void cdtv_free (void)
 	configured = 0;
 }
 
-addrbank *cdtv_init (void)
+addrbank *cdtv_init (struct romconfig *rc)
 {
 	close_unit ();
 	if (!thread_alive) {
@@ -1696,7 +1669,8 @@ addrbank *cdtv_init (void)
 	open_unit ();
 	gui_flicker_led (LED_CD, 0, -1);
 	if (currprefs.cs_cdtvscsi) {
-		init_scsi (&wd_cdtv);
+		init_wd_scsi (wd_cdtv);
+		wd_cdtv->dmac_type = COMMODORE_DMAC;
 	}
 	return &dmac_bank;
 }
@@ -1803,7 +1777,7 @@ uae_u8 *restore_cdtv (uae_u8 *src)
 	if (!currprefs.cs_cdtvcd) {
 		changed_prefs.cs_cdtvcd = changed_prefs.cs_cdtvram = true;
 		currprefs.cs_cdtvcd = currprefs.cs_cdtvram = true;
-		cdtv_init ();
+		cdtv_init (0);
 	}
 	restore_u32 ();
 	
@@ -1851,7 +1825,7 @@ void restore_cdtv_finish (void)
 {
 	if (!currprefs.cs_cdtvcd || currprefs.cs_cdtvcr)
 		return;
-	cdtv_init ();
+	cdtv_init (0);
 	get_toc ();
 	write_comm_pipe_u32 (&requests, 0x0104, 1);
 	if (cd_playing) {
@@ -1863,4 +1837,6 @@ void restore_cdtv_finish (void)
 	}
 }
 
-#endif
+#endif /* SAVESTATE */
+
+#endif /* CDTV */

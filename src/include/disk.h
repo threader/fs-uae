@@ -9,11 +9,9 @@
 #ifndef UAE_DISK_H
 #define UAE_DISK_H
 
-#ifdef FSUAE // NL
 #include "uae/types.h"
-#endif
 
-typedef enum { DRV_NONE = -1, DRV_35_DD = 0, DRV_35_HD, DRV_525_SD, DRV_35_DD_ESCOM } drive_type;
+typedef enum { DRV_NONE = -1, DRV_35_DD = 0, DRV_35_HD, DRV_525_SD, DRV_35_DD_ESCOM, DRV_PC_ONLY_40, DRV_PC_ONLY_80 } drive_type;
 
 #define HISTORY_FLOPPY 0
 #define HISTORY_CD 1
@@ -34,11 +32,34 @@ struct diskinfo
 	TCHAR diskname[110];
 };
 
+#define FLOPPY_RATE_500K 0
+#define FLOPPY_RATE_300K 1
+#define FLOPPY_RATE_250K 2
+#define FLOPPY_RATE_1M 3
+
+struct floppy_reserved
+{
+	int num;
+	struct zfile *img;
+	bool wrprot;
+	int cyl;
+	int cyls;
+	int heads;
+	int secs;
+	int drive_cyls;
+	bool disk_changed;
+	int rate;
+};
+void disk_reserved_setinfo(int num, int cyl, int head, int motor);
+bool disk_reserved_getinfo(int num, struct floppy_reserved *fr);
+void disk_reserved_reset_disk_change(int num);
+
 extern void DISK_init (void);
 extern void DISK_free (void);
 extern void DISK_select (uae_u8 data);
 extern void DISK_select_set (uae_u8 data);
-extern uae_u8 DISK_status (void);
+extern uae_u8 DISK_status_ciaa (void);
+extern uae_u8 DISK_status_ciab (uae_u8);
 extern void disk_eject (int num);
 extern int disk_empty (int num);
 extern void disk_insert (int num, const TCHAR *name);
@@ -58,7 +79,7 @@ extern void dumpdisk (void);
 extern int DISK_history_add (const TCHAR *name, int idx, int type, int donotcheck);
 extern TCHAR *DISK_history_get (int idx, int type);
 int DISK_examine_image (struct uae_prefs *p, int num, struct diskinfo *di);
-extern TCHAR *DISK_get_saveimagepath (const TCHAR *name);
+extern TCHAR *DISK_get_saveimagepath(const TCHAR *name, int type);
 extern void DISK_reinsert (int num);
 extern int disk_prevnext (int drive, int dir);
 extern int disk_prevnext_name (TCHAR *img, int dir);
@@ -83,4 +104,4 @@ extern int disk_debug_track;
 
 #define MAX_PREVIOUS_IMAGES 50
 
-#endif // UAE_DISK_H
+#endif /* UAE_DISK_H */

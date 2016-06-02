@@ -8,11 +8,14 @@
 #include "uae/types.h"
 #include "uae/uae.h"
 
+#include <fs/lazyness.h>
+
 void romlist_init (void);
 void romlist_patch_rom(uae_u8 *buf, size_t size);
 void keyboard_settrans (void);
 
 extern int g_amiga_savestate_docompress;
+extern bool g_fs_uae_jit_compiler;
 
 #include <stdio.h>
 #include <stdint.h>
@@ -54,4 +57,4 @@ extern int g_uae_min_first_line_ntsc;
 
 void od_fs_update_leds(void);
 
-#endif // UAE_FS_H
+#endif /* UAE_FS_H */

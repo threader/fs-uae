@@ -481,6 +481,7 @@ uae_u32 REGPARAM2 x_get_disp_ea_020 (uae_u32 base, int idx)
 	return v;
 }
 
+#ifdef CPUEMU_23
 uae_u32 REGPARAM2 x_get_disp_ea_ce030 (uae_u32 base, int idx)
 {
 	uae_u16 dp = next_iword_030ce ();
@@ -527,6 +528,7 @@ uae_u32 REGPARAM2 x_get_disp_ea_ce030 (uae_u32 base, int idx)
 	}
 	return v;
 }
+#endif
 
 uae_u32 REGPARAM2 x_get_disp_ea_ce020 (uae_u32 base, int idx)
 {
@@ -818,7 +820,7 @@ bool m68k_divl (uae_u32 opcode, uae_u32 src, uae_u16 extra)
 			a |= (uae_s64)m68k_dreg (regs, extra & 7) << 32;
 		}
 
-		if (a == 0x8000000000000000 && src == -1) {
+		if (a == 0x8000000000000000 && src == ~0u) {
 			SET_VFLG (1);
 			SET_NFLG (1);
 			SET_CFLG (0);

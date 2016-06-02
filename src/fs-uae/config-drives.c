@@ -88,10 +88,17 @@ void fs_uae_configure_cdrom(void)
         path = fs_uae_resolve_path_and_free(path, FS_UAE_CD_PATHS);
         //set_default_dirs_from_file_path(path);
         // FIXME: can possibly remove temp / ,image now
-        char *temp = g_strconcat(path, ",image", NULL);
+        char *temp;
+        if (fs_config_is_true("cdrom_drive_0_delay")) {
+            temp = g_strconcat(path, ",delay:image", NULL);
+        } else {
+            temp = g_strconcat(path, ",image", NULL);
+        }
         amiga_set_option("cdimage0", temp);
         g_free(temp);
         g_free(path);
+        auto_num_drives = 1;
+    } else if (fs_config_get_const_string("cdrom_image_0")) {
         auto_num_drives = 1;
     }
 
@@ -416,11 +423,15 @@ void fs_uae_configure_floppies()
         }
 
         if (path[0] != '\0') {
-            path = fs_uae_expand_path_and_free(path);
-            path = fs_uae_resolve_path_and_free(path, FS_UAE_FLOPPY_PATHS);
-            if (!g_file_test(path, G_FILE_TEST_EXISTS)) {
-                fs_emu_warning("Not found: %s", fs_config_get_const_string(
-                                   option_floppy_drive_x));
+            if (g_str_has_prefix(path, "dat://")) {
+
+            } else {
+                path = fs_uae_expand_path_and_free(path);
+                path = fs_uae_resolve_path_and_free(path, FS_UAE_FLOPPY_PATHS);
+                if (!g_file_test(path, G_FILE_TEST_EXISTS)) {
+                    fs_emu_warning("Not found: %s", fs_config_get_const_string(
+                                       option_floppy_drive_x));
+                }
             }
             auto_num_drives = MAX(auto_num_drives, i + 1);
         }
@@ -463,16 +474,28 @@ void fs_uae_configure_floppies()
         amiga_set_option(option_floppyxtype, "-1");
     }
 
-    int volume = fs_config_get_int_clamped("floppy_drive_volume", 0, 100);
-    if (volume != FS_CONFIG_NONE) {
-        if (volume == 0) {
-            for (int i = 0; i < 4; i++) {
-                char *key = g_strdup_printf("floppy%dsound", i);
-                amiga_set_option(key, "0");
-                g_free(key);
-            }
+    int volume = fs_config_get_int_clamped(
+                OPTION_FLOPPY_DRIVE_VOLUME, 0, 100);
+    if (volume == FS_CONFIG_NONE) {
+        volume = 25;
+    }
+    if (volume == 0) {
+        for (int i = 0; i < 4; i++) {
+            char *key = g_strdup_printf("floppy%dsound", i);
+            amiga_set_option(key, "0");
+            g_free(key);
         }
-        amiga_set_int_option("floppy_volume", 100 - volume);
+    }
+    amiga_set_int_option("floppy_volume", 100 - volume);
+
+    volume = fs_config_get_int_clamped(
+                OPTION_FLOPPY_DRIVE_VOLUME_EMPTY, 0, 100);
+    if (volume != FS_CONFIG_NONE) {
+        for (int i = 0; i < 4; i++) {
+            char *key = g_strdup_printf("floppy%dsoundvolume_empty", i);
+            amiga_set_int_option(key, 100 - volume);
+            g_free(key);
+        }
     }
 
     int count = 0;

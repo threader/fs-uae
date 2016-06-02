@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <uae/uae.h>
 #include <fs/emu.h>
+#include <fs/emu/actions.h>
 #include <fs/i18n.h>
 
 static fs_emu_action g_actions[] = {
@@ -276,6 +277,12 @@ static fs_emu_action g_actions[] = {
     { INPUTEVENT_SPC_CDTV_FRONT_PANEL_NEXT, "action_cdtv_front_panel_next", 0 },
     { INPUTEVENT_SPC_CDTV_FRONT_PANEL_REW, "action_cdtv_front_panel_rew", 0 },
     { INPUTEVENT_SPC_CDTV_FRONT_PANEL_FF, "action_cdtv_front_panel_ff", 0 },
+
+    { INPUTEVENT_JOY1_AUTOFIRE_BUTTON, "action_joy_0_autofire_button", 0 },
+    { INPUTEVENT_JOY2_AUTOFIRE_BUTTON, "action_joy_1_autofire_button", 0 },
+    { INPUTEVENT_PAR_JOY1_AUTOFIRE_BUTTON, "action_par_joy_0_autofire_button", 0 },
+    { INPUTEVENT_PAR_JOY2_AUTOFIRE_BUTTON, "action_par_joy_1_autofire_button", 0 },
+
     { INPUTEVENT_SPC_STATESAVE1, "action_save_state_1", 0 },
     { INPUTEVENT_SPC_STATESAVE2, "action_save_state_2", 0 },
     { INPUTEVENT_SPC_STATESAVE3, "action_save_state_3", 0 },
@@ -408,46 +415,39 @@ static fs_emu_action g_actions[] = {
     { INPUTEVENT_AMIGA_JOYPORT_MODE_3_LIGHTPEN, "action_joyport_3_mode_lightpen", 0 },
 
     { INPUTEVENT_UAE_MODULE_RIPPER, "action_module_ripper", 0 },
+    { INPUTEVENT_UAE_MUTE_FLOPPY_SOUNDS, "action_mute_floppy_sounds", 0 },
 
+#if 1
+    { FS_UAE_ACTION_ENTER_DEBUGGER, "action_enter_debugger", 0 },
+#else
     { INPUTEVENT_SPC_ENTERDEBUGGER, "action_enter_debugger", 0 },
+#endif
 
     { 65536, "action_none", 0 },
     { 0, 0, 0 },
 };
 
-static int hotkey_function(int key_code, int key_mod) {
-    //write_log("hotkey: %d mod %d\n", key_code, key_mod);
-    switch (key_code) {
-    case FS_ML_KEY_R:
-        fs_emu_log("hot key: soft reset\n");
-        fs_emu_warning(_("Soft Reset"));
-        fs_emu_queue_action(INPUTEVENT_SPC_SOFTRESET, 1);
-        return 0;
-    case FS_ML_KEY_T:
-        fs_emu_log("hot key: hard reset\n");
-        fs_emu_warning(_("Hard Reset"));
-        fs_emu_queue_action(INPUTEVENT_SPC_HARDRESET, 1);
-        return 0;
-    case FS_ML_KEY_A:
-        fs_emu_log("hot key: freeze button\n");
-        fs_emu_queue_action(INPUTEVENT_SPC_FREEZEBUTTON, 1);
-        return 0;
-    case FS_ML_KEY_D:
-        fs_emu_log("hot key: enter debugger\n");
-        if (fs_config_get_boolean("console_debugger") == 1) {
-            fs_emu_warning(_("Activated debugger"));
-            fs_emu_queue_action(INPUTEVENT_SPC_ENTERDEBUGGER, 1);
+static int hotkey_function(int action, int state)
+{
+    switch(action) {
+    case FS_UAE_ACTION_ENTER_DEBUGGER:
+        if (state) {
+            fs_emu_log("hot key: enter debugger\n");
+            if (fs_config_get_boolean("console_debugger") == 1) {
+                fs_emu_warning(_("Activated debugger"));
+                fs_emu_queue_action(INPUTEVENT_SPC_ENTERDEBUGGER, 1);
+            } else {
+                fs_emu_warning(_("Option \"%s\" is not enabled"),
+                               "console_debugger");
+            }
         }
-        else {
-            fs_emu_warning(_("Option \"%s\" is not enabled"),
-                    "console_debugger");
-        }
-        return 0;
+        return 1;
     }
     return 0;
 }
 
-void fs_uae_configure_actions() {
+void fs_uae_configure_actions()
+{
     fs_log("fs_uae_configure_actions\n");
     fs_emu_set_actions(g_actions);
     for (int i = 0; i < FS_UAE_NUM_INPUT_PORTS; i++) {

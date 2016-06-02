@@ -37,7 +37,9 @@ void amiga_init_lua_state(lua_State *L);
 #define AMIGA_VIDEO_FORMAT_R5G6B5 2
 #define AMIGA_VIDEO_FORMAT_R5G5B5A1 3
 
-int amiga_init();
+int amiga_init(void);
+bool amiga_init_jit_compiler(void);
+
 int amiga_set_synchronization_log_file(const char *path);
 int amiga_quickstart(int model, int config, int accuracy);
 //int amiga_main(int argc, char** argv);
@@ -64,6 +66,7 @@ void amiga_set_deterministic_mode();
 void amiga_set_save_state_compression(int compress);
 
 int amiga_enable_serial_port(const char *serial_name);
+int amiga_enable_parallel_port(const char *parallel_name);
 
 void amiga_set_save_image_dir(const char *path);
 void amiga_set_module_ripper_dir(const char *path);
@@ -79,7 +82,8 @@ enum {
 };
 
 int amiga_get_rand_checksum();
-int amiga_get_state_checksum();
+int amiga_get_state_checksum(void);
+int amiga_get_state_checksum_and_dump(void *data, int size);
 
 void amiga_floppy_set_writable_images(int writable);
 const char *amiga_floppy_get_file(int index);
@@ -218,6 +222,7 @@ int amiga_get_joystick_port_mode(int port);
 */
 void amiga_set_joystick_port_mode(int port, int mode);
 void amiga_set_joystick_port_autofire(int port, int autofire);
+void amiga_enable_auto_mouse_mode(bool enable);
 
 int amiga_send_input_event(int input_event, int state);
 

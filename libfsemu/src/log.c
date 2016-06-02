@@ -8,20 +8,17 @@
 #include <fs/log.h>
 #include <fs/thread.h>
 #include <fs/util.h>
-
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 static struct {
-
     int use_stdout;
     FILE *file;
     char *initial_path;
     int initialized;
     fs_mutex *mutex;
     int flush;
-
 } log;
 
 static void initialize()
@@ -44,7 +41,7 @@ static void initialize()
     log.initial_path = g_build_filename(dir, "fs-uae.log", NULL);
     log.file = g_fopen(log.initial_path, "w");
     if (log.file) {
-        printf("logging to %s\n", log.initial_path);
+        // printf("[LOG] %s\n", log.initial_path);
     }
     g_free(dir);
 }
@@ -63,7 +60,7 @@ void fs_config_set_log_file(const char *path)
     }
     log.file = g_fopen(path, "w");
     if (log.file) {
-        printf("logging to %s\n", path);
+        printf("LOG: %s\n", path);
         if (log.initial_path) {
             FILE *f = g_fopen(log.initial_path, "r");
             if (f) {
@@ -79,9 +76,11 @@ void fs_config_set_log_file(const char *path)
         }
     }
 
-    // All options should have been read, so we can no check log options
+    /* All options should have been read, so we can now check log options */
 
-    if (fs_config_get_boolean("flush_log") == 1) {
+    if (fs_config_get_boolean("log_flush") == 1) {
+        log.flush = 1;
+    } else if (fs_config_get_boolean("flush_log") == 1) {
         log.flush = 1;
     }
 

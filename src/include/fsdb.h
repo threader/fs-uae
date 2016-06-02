@@ -10,8 +10,8 @@
 #ifndef UAE_FSDB_H
 #define UAE_FSDB_H
 
-#ifdef FSUAE // NL
 #include "uae/types.h"
+#ifdef FSUAE
 #include <stdio.h>
 #endif
 
@@ -62,6 +62,15 @@
 #define A_FIBF_EXECUTE (1<<1)
 #define A_FIBF_DELETE  (1<<0)
 
+struct virtualfilesysobject
+{
+	int dir;
+	TCHAR *comment;
+	uae_u32 amigaos_mode;
+	uae_u8 *data;
+	int size;
+};
+
 /* AmigaOS "keys" */
 typedef struct a_inode_struct {
 #ifdef AINO_DEBUG
@@ -107,6 +116,7 @@ typedef struct a_inode_struct {
     /* not equaling unit.mountcount -> not in this volume */
     unsigned int mountcount;
 	uae_u64 uniq_external;
+	struct virtualfilesysobject *vfso;
 #ifdef AINO_DEBUG
     uae_u32 checksum2;
 #endif
@@ -198,4 +208,4 @@ int fsdb_set_file_time(a_inode *node, int days, int mins, int ticks);
 int host_errno_to_dos_errno(int err);
 #endif
 
-#endif // UAE_FSDB_H
+#endif /* UAE_FSDB_H */

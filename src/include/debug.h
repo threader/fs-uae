@@ -10,8 +10,8 @@
 #ifndef UAE_DEBUG_H
 #define UAE_DEBUG_H
 
-#ifdef FSUAE // NL
 #include "uae/types.h"
+#ifdef FSUAE
 #include "uae/inline.h"
 #endif
 
@@ -58,6 +58,7 @@ extern int debug_read_memory_8 (uaecptr addr);
 extern int debug_peek_memory_8 (uaecptr addr);
 extern int debug_write_memory_16 (uaecptr addr, uae_u16 v);
 extern int debug_write_memory_8 (uaecptr addr, uae_u8 v);
+extern bool debug_enforcer(void);
 
 #define BREAKPOINT_TOTAL 20
 struct breakpoint_node {
@@ -93,6 +94,7 @@ extern struct breakpoint_node bpnodes[BREAKPOINT_TOTAL];
 #define MW_MASK_SPR_5			0x01000000
 #define MW_MASK_SPR_6			0x02000000
 #define MW_MASK_SPR_7			0x04000000
+#define MW_MASK_NONE			0x08000000
 #define MW_MASK_ALL				(0x08000000 - 1)
 
 #define MEMWATCH_TOTAL 20
@@ -173,6 +175,6 @@ extern void debug_draw_cycles (uae_u8 *buf, int bpp, int line, int width, int he
 
 STATIC_INLINE void activate_debugger (void) { };
 
-#endif // DEBUGGER
+#endif /* DEBUGGER */
 
-#endif // UAE_DEBUG_H
+#endif /* UAE_DEBUG_H */
